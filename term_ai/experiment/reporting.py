@@ -31,19 +31,32 @@ def _load_prediction_errors(runs_dir: str | Path, limit: int = 100) -> list[dict
     return errors
 
 
+def _load_explanation_summaries(runs_dir: str | Path) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for path in Path(runs_dir).rglob("*explanation_judgment_summary.json"):
+        summary = json.loads(path.read_text(encoding="utf-8"))
+        summary["run_dir"] = str(path.parent)
+        summary["summary_path"] = str(path)
+        rows.append(summary)
+    return rows
+
+
 def write_final_report_inputs(runs_dir: str | Path, output_dir: str | Path) -> dict[str, str]:
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
     metrics = _load_metric_logs(runs_dir)
     errors = _load_prediction_errors(runs_dir)
+    explanation_summaries = _load_explanation_summaries(runs_dir)
     metrics_path = output / "final_experiment_report_input.json"
     errors_path = output / "error_analysis_input.json"
+    explanations_path = output / "explanation_judge_report_input.json"
     deploy_path = output / "deployment_recommendation_input.json"
     report_md_path = output / "final_experiment_report.md"
     deploy_md_path = output / "deployment_recommendation.md"
 
     metrics_path.write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
     errors_path.write_text(json.dumps(errors, ensure_ascii=False, indent=2), encoding="utf-8")
+    explanations_path.write_text(json.dumps(explanation_summaries, ensure_ascii=False, indent=2), encoding="utf-8")
 
     recommendation = {
         "rules": [
@@ -55,11 +68,12 @@ def write_final_report_inputs(runs_dir: str | Path, output_dir: str | Path) -> d
         "error_cases": len(errors),
     }
     deploy_path.write_text(json.dumps(recommendation, ensure_ascii=False, indent=2), encoding="utf-8")
-    report_md_path.write_text(_render_final_report(metrics, errors), encoding="utf-8")
+    report_md_path.write_text(_render_final_report(metrics, errors, explanation_summaries), encoding="utf-8")
     deploy_md_path.write_text(_render_deployment_recommendation(metrics, recommendation), encoding="utf-8")
     return {
         "final_report_input": str(metrics_path),
         "error_analysis_input": str(errors_path),
+        "explanation_judge_report_input": str(explanations_path),
         "deployment_recommendation_input": str(deploy_path),
         "final_report": str(report_md_path),
         "deployment_recommendation": str(deploy_md_path),
@@ -84,15 +98,32 @@ def _error_breakdown(errors: list[dict[str, Any]]) -> dict[str, int]:
 
 
 def _ops_missing(metrics: list[dict[str, Any]]) -> list[str]:
-    required = ["latency_ms", "tokens_per_sec", "ram_mb", "estimated_cost_usd"]
+    required = [
+        "latency_ms",
+        "batch_size_1_latency_ms",
+        "tokens_per_sec",
+        "ram_mb",
+        "cold_start_ms",
+    ]
     missing: list[str] = []
     for key in required:
         if not any((row.get("ops_metric_coverage") or {}).get(key, 0) for row in metrics):
             missing.append(key)
+    has_cost = any(
+        (row.get("ops_metric_coverage") or {}).get("estimated_cost_usd", 0)
+        or (row.get("ops_metric_coverage") or {}).get("local_cost_per_hour_usd", 0)
+        for row in metrics
+    )
+    if not has_cost:
+        missing.append("estimated_or_local_cost")
     return missing
 
 
-def _render_final_report(metrics: list[dict[str, Any]], errors: list[dict[str, Any]]) -> str:
+def _render_final_report(
+    metrics: list[dict[str, Any]],
+    errors: list[dict[str, Any]],
+    explanation_summaries: list[dict[str, Any]],
+) -> str:
     best_accuracy = _best_metric(metrics, "accuracy")
     best_latency = _best_metric(metrics, "latency_p95", reverse=False)
     best_cost = _best_metric(metrics, "cost_per_1000_questions", reverse=False)
@@ -126,6 +157,18 @@ def _render_final_report(metrics: list[dict[str, Any]], errors: list[dict[str, A
             lines.append(f"- {tag}: {count}")
     else:
         lines.append("- No prediction errors were collected.")
+    lines.extend(["", "## Explanation Judge"])
+    if explanation_summaries:
+        for summary in explanation_summaries:
+            lines.append(
+                "- "
+                f"{summary.get('summary_path', summary.get('run_dir', 'unknown'))}: "
+                f"final_score_avg={float(summary.get('final_score_avg', 0.0)):.4f}, "
+                f"reasoning_faithfulness_avg={float(summary.get('reasoning_faithfulness_avg', 0.0)):.4f}, "
+                f"hallucination_fail_rate={float(summary.get('hallucination_fail_rate', 0.0)):.4f}"
+            )
+    else:
+        lines.append("- No explanation judge summaries were collected.")
     lines.extend(["", "## Operational Coverage"])
     if missing_ops:
         lines.append(f"- Missing or empty operational metrics: {', '.join(missing_ops)}")

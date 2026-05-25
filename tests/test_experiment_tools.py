@@ -4,9 +4,15 @@ from pathlib import Path
 import pytest
 
 from term_ai.experiment.hybrid import run_hybrid_policy, tune_hybrid_policy
+from term_ai.experiment.kd_sweep import KDAblationSweepConfig, run_kd_ablation_sweep
 from term_ai.experiment.lora_kd import metadata_to_kd_rows
+from term_ai.experiment.metrics import summarize_predictions
 from term_ai.experiment.mcq import parse_answer_letter
+from term_ai.experiment.prompt_variation_sweep import PromptVariationSweepConfig, run_prompt_variation_sweep
+from term_ai.experiment.quantization import validate_g3_adapter_checkpoint
+from term_ai.experiment.reporting import write_final_report_inputs
 from term_ai.experiment.test_lock import enforce_final_test_once
+from term_ai.experiment.workflow import _augmentation_split_totals, _default_phase_jobs
 
 
 def test_parse_answer_letter_from_json_and_text():
@@ -168,3 +174,129 @@ def test_hybrid_policy_tuning_writes_selected_policy(tmp_path: Path):
     metrics = tune_hybrid_policy(primary, fallback, tmp_path / "hybrid", threshold_grid=[0.3, 0.7])
     assert metrics["accuracy"] == 1.0
     assert (tmp_path / "hybrid" / "hybrid_policy_tuning.json").exists()
+
+
+def test_prompt_variation_sweep_writes_variant_matrix_without_training(tmp_path: Path):
+    train = tmp_path / "train.jsonl"
+    dev = tmp_path / "dev.jsonl"
+    record = {
+        "messages": [
+            {"role": "system", "content": "system"},
+            {"role": "user", "content": "Task: Context Cloze"},
+            {"role": "assistant", "content": "A) answer"},
+        ]
+    }
+    train.write_text(json.dumps(record, ensure_ascii=False) + "\n", encoding="utf-8")
+    dev.write_text(json.dumps(record, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    manifest = run_prompt_variation_sweep(
+        PromptVariationSweepConfig(
+            train_jsonl=str(train),
+            dev_jsonl=str(dev),
+            output_dir=str(tmp_path / "sweep"),
+            variants=["default", "concise"],
+        )
+    )
+
+    assert [row["status"] for row in manifest["runs"]] == ["planned", "planned"]
+    assert (tmp_path / "sweep" / "prompt_variation_sweep.json").exists()
+
+
+def test_kd_ablation_sweep_writes_hard_soft_rationale_matrix(tmp_path: Path):
+    manifest = run_kd_ablation_sweep(
+        KDAblationSweepConfig(
+            model_name_or_path="local-model",
+            metadata_jsonl="train.jsonl",
+            dev_metadata_jsonl="dev.jsonl",
+            output_dir=str(tmp_path / "kd"),
+        )
+    )
+
+    ablations = {row["ablation"]: row for row in manifest["runs"]}
+    assert set(ablations) == {"hard_only_with_rationale", "soft_kd_with_rationale", "soft_kd_no_rationale"}
+    assert ablations["hard_only_with_rationale"]["hard_label_only"] is True
+    assert ablations["soft_kd_no_rationale"]["include_rationale"] is False
+
+
+def test_g4_adapter_validation_requires_g3_manifest(tmp_path: Path):
+    adapter = tmp_path / "final_adapter"
+    adapter.mkdir()
+    with pytest.raises(ValueError, match="G3 KD manifest"):
+        validate_g3_adapter_checkpoint(adapter)
+
+    manifest = {
+        "experiment_family": "G3",
+        "checkpoint_type": "lora_sft_kd",
+        "final_adapter": str(adapter),
+    }
+    (tmp_path / "g3_checkpoint_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    result = validate_g3_adapter_checkpoint(adapter)
+    assert result["verified"] is True
+    assert result["manifest_type"] == "g3_checkpoint_manifest"
+
+
+def test_ops_summary_includes_batch_cold_start_and_local_cost():
+    metrics = summarize_predictions(
+        [
+            {
+                "label": "A",
+                "prediction": "A",
+                "confidence": 0.9,
+                "latency_ms": 100.0,
+                "tokens_per_sec": 20.0,
+                "ram_mb": 512.0,
+                "batch_size": 1,
+                "cold_start_ms": 250.0,
+                "local_cost_per_hour_usd": 1.8,
+            }
+        ]
+    )
+
+    assert metrics["batch_size_1_latency_p95"] == 100.0
+    assert metrics["cold_start_ms"] == 250.0
+    assert metrics["cost_per_1000_questions"] > 0
+
+
+def test_final_report_collects_explanation_judge_summary(tmp_path: Path):
+    runs = tmp_path / "runs"
+    summary_dir = runs / "G0"
+    summary_dir.mkdir(parents=True)
+    (summary_dir / "G0_explanation_judgment_summary.json").write_text(
+        json.dumps(
+            {
+                "n": 2,
+                "semantic_correctness_avg": 1.5,
+                "reasoning_faithfulness_avg": 1.0,
+                "hallucination_fail_rate": 0.5,
+                "final_score_avg": 1.25,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    outputs = write_final_report_inputs(runs, tmp_path / "reports")
+    report = Path(outputs["final_report"]).read_text(encoding="utf-8")
+    assert "Explanation Judge" in report
+    assert "hallucination_fail_rate=0.5000" in report
+
+
+def test_master_workflow_default_jobs_cover_g0_g4_and_h1():
+    jobs = _default_phase_jobs(
+        {
+            "runs_dir": "runs",
+            "auto_phase_jobs": {
+                "enabled": True,
+                "output_dir": "runs/master_matrix",
+                "eval_split": "dev",
+                "model_ids": {"gemma": "google/gemma-2-2b-it", "qwen": "Qwen/Qwen2.5-3B-Instruct"},
+            },
+        }
+    )
+    names = {job["name"] for job in jobs}
+    assert {"G0-Gemma", "G0-Qwen", "G4", "H1", "prompt-template-variation", "G3-KD-ablation"} <= names
+    assert any("execution.adapter_path=" in part for job in jobs for part in job["command"])
+
+
+def test_augmentation_split_totals_enable_dev_test_generation():
+    totals = _augmentation_split_totals({"split_totals": {"train": 4, "dev": 2, "test": 2}}, total=0)
+    assert totals == {"train": 4, "dev": 2, "test": 2}

@@ -11,6 +11,7 @@ from term_ai.augmentation.dataset_builder import (
     build_raw_sft_from_anchors,
     build_validated_aug_sft_by_split,
 )
+from term_ai.augmentation.orchestrator import generate_split_batch
 from term_ai.augmentation.prompt_variation import write_sft_prompt_variants
 from term_ai.contracts import RAW_GT_STATUS, TASK_RAW_MEANING_SELECTION, validate_sft_record
 
@@ -154,3 +155,35 @@ def test_sft_prompt_variants_keep_messages_only_contract(tmp_path: Path):
     concise = json.loads((tmp_path / "variants" / "train_concise.jsonl").read_text(encoding="utf-8").splitlines()[0])
     validate_sft_record(concise)
     assert "Choose the best option" in concise["messages"][1]["content"]
+
+
+def test_generate_split_batch_uses_requested_dev_or_test_split(tmp_path: Path):
+    anchors = tmp_path / "anchors.jsonl"
+    rows = [
+        {"anchor_id": "a1", "word_id": "w1", "word": "renew", "pos": "verb", "meaning": "extend", "split": "dev"},
+        {"anchor_id": "a2", "word_id": "w2", "word": "audit", "pos": "noun", "meaning": "review", "split": "test"},
+    ]
+    anchors.write_text("\n".join(json.dumps(row, ensure_ascii=False) for row in rows), encoding="utf-8")
+
+    class FakeTeacher:
+        def generate_json(self, _prompt: str) -> dict:
+            return {
+                "task_type": "Context Cloze",
+                "word": "renew",
+                "context": "The team will ___ the contract.",
+                "options": ["renew", "audit", "delay", "reject"],
+                "answer_idx": 0,
+                "rationale": "renew fits.",
+                "teacher_scores": [0.8, 0.1, 0.05, 0.05],
+            }
+
+    manifest = generate_split_batch(
+        anchors,
+        tmp_path / "dev_aug.jsonl",
+        total=1,
+        split="dev",
+        teacher_client=FakeTeacher(),
+    )
+    row = json.loads((tmp_path / "dev_aug.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    assert manifest["source_split"] == "dev"
+    assert row["split"] == "dev"
