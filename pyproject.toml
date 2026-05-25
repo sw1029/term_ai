@@ -1,0 +1,27 @@
+[project]
+name = "term-ai"
+version = "0.1.0"
+description = "TOEIC business vocabulary augmentation and experiment modules."
+requires-python = ">=3.10"
+dependencies = [
+  "hydra-core>=1.3",
+]
+
+[project.optional-dependencies]
+llm = [
+  "openai>=1.0",
+]
+train = [
+  "torch",
+  "transformers",
+  "datasets",
+  "peft",
+  "accelerate",
+]
+metrics = [
+  "scikit-learn",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

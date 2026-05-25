@@ -1,2 +1,6 @@
 *.md
 .env
+__pycache__/
+.pytest_cache/
+outputs/
+runs/
