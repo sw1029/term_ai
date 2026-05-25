@@ -54,6 +54,7 @@ execution:
   model_name_or_path: null
   adapter_path: null
   limit: null
+  local_cost_per_hour_usd: 0.0
   test_lock_dir: runs/_test_locks
   allow_repeat_test: false
   reranker:
@@ -107,6 +108,7 @@ training:
     response_format: json_distribution
   quantization:
     compare_same_checkpoint: true
+    require_g3_manifest: true
     modes:
       - fp16
       - 8bit
@@ -157,9 +159,58 @@ workflow:
     augmentation:
       enabled: false
       total: 0
+      split_totals:
+        train: 0
+        dev: 0
+        test: 0
       model: gpt-5.4-mini
       env_path: .env
       requests_per_second: 1.0
+      candidate_path_template: data/aug/{split}_aug_candidate_v1.jsonl
+      auto_filter_path_template: data/aug/{split}_aug_auto_pass_v1.jsonl
+      judge:
+        enabled: false
+        model: gpt-5.4-mini
+        env_path: .env
+        requests_per_second: 1.0
+        enforce_model_separation: true
+        output_path_template: data/judge/{split}_judge_v1.jsonl
+        metadata_path_template: data/metadata/{split}_aug_judge_pass_v1.jsonl
     strict_judge_metadata: null
     raw_teacher_scores: null
+    auto_phase_jobs:
+      enabled: true
+      output_dir: runs/master_matrix
+      eval_split: dev
+      include_baselines: true
+      include_zero_shot: true
+      include_lora_sft: true
+      include_lora_kd: true
+      include_quantization: true
+      include_hybrid: true
+      g4_source_experiment: G3-Gemma
+      prompt_variation:
+        enabled: true
+        train_jsonl: data/sft/raw_judge_aug_train_sft_v1.jsonl
+        dev_jsonl: data/sft/raw_judge_aug_dev_sft_v1.jsonl
+        eval_metadata: data/metadata/raw_mcq_v1.jsonl
+        execute_training: true
+      kd_ablation:
+        enabled: true
+        metadata_jsonl: data/metadata/kd_train_view_v1.jsonl
+        dev_metadata_jsonl: data/metadata/kd_dev_view_v1.jsonl
+        eval_metadata: data/metadata/raw_mcq_v1.jsonl
+        execute_training: true
+      model_ids:
+        gemma: google/gemma-2-2b-it
+        qwen: Qwen/Qwen2.5-3B-Instruct
+    explanation_judge:
+      enabled: false
+      judge_model: null
+      generator_model: null
+      env_path: .env
+      requests_per_second: 1.0
+      enforce_model_separation: true
+      prediction_logs: []
+      output_dir: runs/explanation_judge
     phase_jobs: []

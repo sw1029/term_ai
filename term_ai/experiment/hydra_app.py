@@ -154,6 +154,7 @@ def main(cfg: DictConfig) -> None:
                 final_test_once=final_test_once,
                 experiment_id=experiment_id,
                 test_lock_dir=test_lock_dir,
+                local_cost_per_hour_usd=float(cfg.execution.local_cost_per_hour_usd),
             )
         elif experiment_id in {"G1-Gemma", "G1-Qwen", "G2-Gemma", "G2-Qwen"}:
             from term_ai.experiment.training import LoRATrainingConfig, train_lora_sft
@@ -221,8 +222,10 @@ def main(cfg: DictConfig) -> None:
                 min_status=min_status,
                 limit=cfg.execution.limit,
                 g3_checkpoint_id=str(cfg.execution.adapter_path),
+                require_g3_manifest=bool(cfg.training.quantization.require_g3_manifest),
                 final_test_once=final_test_once,
                 test_lock_dir=test_lock_dir,
+                local_cost_per_hour_usd=float(cfg.execution.local_cost_per_hour_usd),
             )
         elif experiment_id == "E1":
             from term_ai.experiment.kd_scorer import train_kd_scorer
