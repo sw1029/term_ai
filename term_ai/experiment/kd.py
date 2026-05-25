@@ -15,7 +15,7 @@ class KDRecord:
     task_type: str
 
 
-def load_kd_records(metadata_path: str | Path, min_status: str = "aug_human_pass") -> list[KDRecord]:
+def load_kd_records(metadata_path: str | Path, min_status: str = "aug_judge_pass") -> list[KDRecord]:
     from term_ai.contracts import status_reaches
 
     records: list[KDRecord] = []
@@ -45,7 +45,7 @@ def load_kd_records(metadata_path: str | Path, min_status: str = "aug_human_pass
     return records
 
 
-def write_kd_training_view(metadata_path: str | Path, output_path: str | Path, min_status: str = "aug_human_pass") -> int:
+def write_kd_training_view(metadata_path: str | Path, output_path: str | Path, min_status: str = "aug_judge_pass") -> int:
     records = load_kd_records(metadata_path, min_status=min_status)
     with open(output_path, "w", encoding="utf-8", newline="\n") as handle:
         for record in records:

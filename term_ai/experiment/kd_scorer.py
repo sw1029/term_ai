@@ -7,7 +7,7 @@ from typing import Any
 
 import numpy as np
 
-from term_ai.contracts import APPROVED_AUG_STATUS, answer_label, write_jsonl
+from term_ai.contracts import answer_label, write_jsonl
 from term_ai.experiment.baselines import _item_features, _load_embedder
 from term_ai.experiment.metrics import summarize_predictions
 from term_ai.experiment.mcq import MCQItem, load_mcq_items, prediction_row
@@ -40,24 +40,30 @@ def train_kd_scorer(
     embedding_model: str = "mixedbread-ai/mxbai-embed-large-v1",
     train_split: str = "train",
     eval_split: str = "dev",
-    min_status: str = APPROVED_AUG_STATUS,
+    min_status: str = "aug_judge_pass",
     epochs: int = 50,
     lambda_soft: float = 0.5,
     mu_margin: float = 0.2,
     final_test_once: bool = True,
+    test_lock_dir: str | Path | None = None,
+    require_teacher_scores: bool = True,
 ) -> dict[str, Any]:
     import torch
     import torch.nn.functional as F
 
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
-    enforce_final_test_once(output, "E1", eval_split, enabled=final_test_once)
+    enforce_final_test_once(output, "E1", eval_split, enabled=final_test_once, lock_dir=test_lock_dir)
 
     items = load_mcq_items(metadata_path, min_status=min_status)
+    if require_teacher_scores:
+        items = [item for item in items if item.teacher_scores and len(item.teacher_scores) == 4]
     train_items = [item for item in items if item.split == train_split]
     eval_items = [item for item in items if item.split == eval_split]
     if not train_items:
-        raise ValueError("no train items for KD scorer")
+        raise ValueError("no train items for KD scorer; check min_status and teacher_scores")
+    if not eval_items:
+        raise ValueError("no eval items for KD scorer; check eval_split, min_status, and teacher_scores")
     embedder = _load_embedder(embedding_model)
 
     sample_features = _item_features(embedder, train_items[0])
@@ -113,10 +119,12 @@ def main() -> None:
     parser.add_argument("--embedding-model", default="mixedbread-ai/mxbai-embed-large-v1")
     parser.add_argument("--train-split", default="train")
     parser.add_argument("--eval-split", default="dev")
-    parser.add_argument("--min-status", default=APPROVED_AUG_STATUS)
+    parser.add_argument("--min-status", default="aug_judge_pass")
     parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--lambda-soft", type=float, default=0.5)
     parser.add_argument("--mu-margin", type=float, default=0.2)
+    parser.add_argument("--test-lock-dir")
+    parser.add_argument("--allow-missing-teacher-scores", action="store_true")
     parser.add_argument("--allow-repeat-test", action="store_true")
     args = parser.parse_args()
     metrics = train_kd_scorer(
@@ -130,6 +138,8 @@ def main() -> None:
         lambda_soft=args.lambda_soft,
         mu_margin=args.mu_margin,
         final_test_once=not args.allow_repeat_test,
+        test_lock_dir=args.test_lock_dir,
+        require_teacher_scores=not args.allow_missing_teacher_scores,
     )
     print(json.dumps(metrics, ensure_ascii=False, indent=2))
 

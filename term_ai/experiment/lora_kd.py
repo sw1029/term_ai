@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from term_ai.augmentation.sft_builder import candidate_payload_to_sft_record
-from term_ai.contracts import APPROVED_AUG_STATUS, RAW_GT_STATUS, answer_label, iter_jsonl, status_reaches
+from term_ai.contracts import RAW_GT_STATUS, answer_label, iter_jsonl, status_reaches
 
 
 @dataclass
@@ -17,8 +17,8 @@ class LoRAKDConfig:
     metadata_jsonl: str
     dev_metadata_jsonl: str
     output_dir: str
-    min_status: str = APPROVED_AUG_STATUS
-    dev_min_status: str = APPROVED_AUG_STATUS
+    min_status: str = "aug_judge_pass"
+    dev_min_status: str = "aug_judge_pass"
     max_length: int = 1024
     learning_rate: float = 2e-4
     epochs: int = 3
@@ -30,23 +30,27 @@ class LoRAKDConfig:
     lambda_soft: float = 0.5
     hard_label_only: bool = False
     include_rationale: bool = True
+    require_teacher_scores: bool = True
     resume_from_checkpoint: str | None = None
 
 
-def _soft_scores(row: dict[str, Any], answer_idx: int) -> list[float]:
+def _soft_scores(row: dict[str, Any], answer_idx: int, require_teacher_scores: bool) -> list[float]:
     payload = row.get("payload") or {}
     scores = row.get("teacher_scores") or payload.get("teacher_scores")
     if isinstance(scores, list) and len(scores) == 4 and all(isinstance(score, (int, float)) for score in scores):
         total = float(sum(scores))
         if total > 0:
             return [float(score) / total for score in scores]
+    if require_teacher_scores:
+        raise ValueError(f"metadata item {row.get('item_id')} missing valid 4-way teacher_scores")
     return [1.0 if idx == answer_idx else 0.0 for idx in range(4)]
 
 
 def metadata_to_kd_rows(
     metadata_path: str | Path,
-    min_status: str = APPROVED_AUG_STATUS,
+    min_status: str = "aug_judge_pass",
     include_rationale: bool = True,
+    require_teacher_scores: bool = True,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for row in iter_jsonl(metadata_path):
@@ -68,7 +72,7 @@ def metadata_to_kd_rows(
                 "item_id": row.get("item_id"),
                 "messages": sft["messages"],
                 "answer_idx": answer_idx,
-                "teacher_scores": _soft_scores(row, answer_idx),
+                "teacher_scores": _soft_scores(row, answer_idx, require_teacher_scores=require_teacher_scores),
             }
         )
     return rows
@@ -90,11 +94,13 @@ def train_lora_sft_kd(config: LoRAKDConfig) -> Path:
         config.metadata_jsonl,
         min_status=config.min_status,
         include_rationale=config.include_rationale,
+        require_teacher_scores=config.require_teacher_scores and not config.hard_label_only,
     )
     dev_rows = metadata_to_kd_rows(
         config.dev_metadata_jsonl,
         min_status=config.dev_min_status,
         include_rationale=config.include_rationale,
+        require_teacher_scores=config.require_teacher_scores and not config.hard_label_only,
     )
     if not train_rows:
         raise ValueError("no training rows for LoRA KD")
@@ -219,8 +225,8 @@ def main() -> None:
     parser.add_argument("--metadata-jsonl", required=True)
     parser.add_argument("--dev-metadata-jsonl", required=True)
     parser.add_argument("--output-dir", required=True)
-    parser.add_argument("--min-status", default=APPROVED_AUG_STATUS)
-    parser.add_argument("--dev-min-status", default=APPROVED_AUG_STATUS)
+    parser.add_argument("--min-status", default="aug_judge_pass")
+    parser.add_argument("--dev-min-status", default="aug_judge_pass")
     parser.add_argument("--max-length", type=int, default=1024)
     parser.add_argument("--learning-rate", type=float, default=2e-4)
     parser.add_argument("--epochs", type=int, default=3)
@@ -233,6 +239,8 @@ def main() -> None:
     parser.add_argument("--hard-label-only", action="store_true")
     parser.add_argument("--drop-rationale", dest="include_rationale", action="store_false")
     parser.set_defaults(include_rationale=True)
+    parser.add_argument("--allow-missing-teacher-scores", dest="require_teacher_scores", action="store_false")
+    parser.set_defaults(require_teacher_scores=True)
     parser.add_argument("--resume-from-checkpoint")
     args = parser.parse_args()
     adapter = train_lora_sft_kd(LoRAKDConfig(**vars(args)))
