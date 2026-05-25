@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from term_ai.contracts import answer_label, status_reaches
+from term_ai.contracts import APPROVED_AUG_STATUS, answer_label, status_reaches
 
 
 @dataclass(frozen=True)
@@ -20,6 +20,10 @@ class MCQItem:
     options: list[str]
     answer_idx: int
     teacher_scores: list[float] | None = None
+    status: str = ""
+    source: str = ""
+    dataset_view: str = ""
+    stress_tags: tuple[str, ...] = ()
 
     @property
     def label(self) -> str:
@@ -43,7 +47,7 @@ class MCQItem:
         )
 
 
-def load_mcq_items(metadata_path: str | Path, min_status: str = "aug_auto_pass") -> list[MCQItem]:
+def load_mcq_items(metadata_path: str | Path, min_status: str = APPROVED_AUG_STATUS) -> list[MCQItem]:
     items: list[MCQItem] = []
     with open(metadata_path, "r", encoding="utf-8") as handle:
         for line_no, line in enumerate(handle, start=1):
@@ -57,17 +61,24 @@ def load_mcq_items(metadata_path: str | Path, min_status: str = "aug_auto_pass")
             answer_idx = payload.get("answer_idx")
             if len(options) != 4 or not isinstance(answer_idx, int):
                 raise ValueError(f"metadata line {line_no} is not a 4-option MCQ")
+            task_type = str(payload.get("source_task_type") or payload.get("task_type") or "")
+            teacher_scores = payload.get("teacher_scores") or row.get("teacher_scores")
+            stress_tags = tuple(str(tag) for tag in row.get("stress_tags") or payload.get("stress_tags") or [])
             items.append(
                 MCQItem(
                     item_id=str(row.get("item_id") or f"line-{line_no}"),
                     split=str(row.get("split") or "unknown"),
-                    task_type=str(payload.get("task_type") or ""),
+                    task_type=task_type,
                     word=str(payload.get("word") or ""),
                     context=str(payload.get("context") or ""),
                     meaning_ko=str(payload.get("meaning_ko") or ""),
                     options=options,
                     answer_idx=answer_idx,
-                    teacher_scores=payload.get("teacher_scores"),
+                    teacher_scores=teacher_scores,
+                    status=str(row.get("status") or ""),
+                    source=str(row.get("source") or ""),
+                    dataset_view=str(row.get("dataset_view") or ""),
+                    stress_tags=stress_tags,
                 )
             )
     return items

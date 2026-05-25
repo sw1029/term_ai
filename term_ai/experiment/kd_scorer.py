@@ -7,10 +7,12 @@ from typing import Any
 
 import numpy as np
 
-from term_ai.contracts import answer_label, write_jsonl
+from term_ai.contracts import APPROVED_AUG_STATUS, answer_label, write_jsonl
 from term_ai.experiment.baselines import _item_features, _load_embedder
 from term_ai.experiment.metrics import summarize_predictions
 from term_ai.experiment.mcq import MCQItem, load_mcq_items, prediction_row
+from term_ai.experiment.ops import memory_snapshot, timed
+from term_ai.experiment.test_lock import enforce_final_test_once
 
 
 class TorchMLPScorer:
@@ -38,13 +40,18 @@ def train_kd_scorer(
     embedding_model: str = "mixedbread-ai/mxbai-embed-large-v1",
     train_split: str = "train",
     eval_split: str = "dev",
-    min_status: str = "aug_auto_pass",
+    min_status: str = APPROVED_AUG_STATUS,
     epochs: int = 50,
     lambda_soft: float = 0.5,
     mu_margin: float = 0.2,
+    final_test_once: bool = True,
 ) -> dict[str, Any]:
     import torch
     import torch.nn.functional as F
+
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    enforce_final_test_once(output, "E1", eval_split, enabled=final_test_once)
 
     items = load_mcq_items(metadata_path, min_status=min_status)
     train_items = [item for item in items if item.split == train_split]
@@ -76,15 +83,22 @@ def train_kd_scorer(
 
     predictions: list[dict[str, Any]] = []
     for item in eval_items:
-        features = torch.tensor(_item_features(embedder, item), dtype=torch.float32)
-        with torch.no_grad():
-            logits = scorer(features).squeeze(-1)
-            probs = torch.softmax(logits, dim=0).detach().cpu().numpy()
+        with timed() as state:
+            features = torch.tensor(_item_features(embedder, item), dtype=torch.float32)
+            with torch.no_grad():
+                logits = scorer(features).squeeze(-1)
+                probs = torch.softmax(logits, dim=0).detach().cpu().numpy()
         idx = int(np.argmax(probs))
-        predictions.append(prediction_row(item, answer_label(idx), float(probs[idx])))
+        predictions.append(
+            prediction_row(
+                item,
+                answer_label(idx),
+                float(probs[idx]),
+                latency_ms=state["latency_ms"],
+                extra=memory_snapshot(),
+            )
+        )
 
-    output = Path(output_dir)
-    output.mkdir(parents=True, exist_ok=True)
     torch.save({"state_dict": scorer.state_dict(), "embedding_model": embedding_model}, output / "kd_scorer.pt")
     metrics = summarize_predictions(predictions)
     write_jsonl(output / "prediction_log.jsonl", predictions)
@@ -99,10 +113,11 @@ def main() -> None:
     parser.add_argument("--embedding-model", default="mixedbread-ai/mxbai-embed-large-v1")
     parser.add_argument("--train-split", default="train")
     parser.add_argument("--eval-split", default="dev")
-    parser.add_argument("--min-status", default="aug_auto_pass")
+    parser.add_argument("--min-status", default=APPROVED_AUG_STATUS)
     parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--lambda-soft", type=float, default=0.5)
     parser.add_argument("--mu-margin", type=float, default=0.2)
+    parser.add_argument("--allow-repeat-test", action="store_true")
     args = parser.parse_args()
     metrics = train_kd_scorer(
         metadata_path=args.metadata,
@@ -114,6 +129,7 @@ def main() -> None:
         epochs=args.epochs,
         lambda_soft=args.lambda_soft,
         mu_margin=args.mu_margin,
+        final_test_once=not args.allow_repeat_test,
     )
     print(json.dumps(metrics, ensure_ascii=False, indent=2))
 

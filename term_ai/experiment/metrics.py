@@ -94,6 +94,85 @@ def bootstrap_accuracy_ci(
     return (lower, upper)
 
 
+def paired_bootstrap_accuracy_delta(
+    labels: list[str],
+    predictions_a: list[str],
+    predictions_b: list[str],
+    samples: int = 1000,
+    alpha: float = 0.05,
+    seed: int = 42,
+) -> dict[str, float | list[float]]:
+    if not (len(labels) == len(predictions_a) == len(predictions_b)):
+        raise ValueError("labels and prediction lengths differ")
+    if not labels:
+        return {"delta": 0.0, "ci": [0.0, 0.0], "p_value_two_sided": 1.0}
+
+    observed = accuracy(labels, predictions_a) - accuracy(labels, predictions_b)
+    rng = random.Random(seed)
+    n = len(labels)
+    deltas: list[float] = []
+    for _ in range(samples):
+        indices = [rng.randrange(n) for _ in range(n)]
+        sample_labels = [labels[idx] for idx in indices]
+        sample_a = [predictions_a[idx] for idx in indices]
+        sample_b = [predictions_b[idx] for idx in indices]
+        deltas.append(accuracy(sample_labels, sample_a) - accuracy(sample_labels, sample_b))
+    deltas.sort()
+    lower = deltas[int((alpha / 2) * samples)]
+    upper = deltas[min(samples - 1, int((1 - alpha / 2) * samples))]
+    opposite = sum(1 for delta in deltas if delta * observed <= 0)
+    p_value = min(1.0, 2 * opposite / samples)
+    return {"delta": observed, "ci": [lower, upper], "p_value_two_sided": p_value}
+
+
+def mcnemar_test(
+    labels: list[str],
+    predictions_a: list[str],
+    predictions_b: list[str],
+    continuity_correction: bool = True,
+) -> dict[str, float | int]:
+    if not (len(labels) == len(predictions_a) == len(predictions_b)):
+        raise ValueError("labels and prediction lengths differ")
+    b = 0  # A correct, B wrong
+    c = 0  # A wrong, B correct
+    for label, pred_a, pred_b in zip(labels, predictions_a, predictions_b):
+        a_correct = pred_a == label
+        b_correct = pred_b == label
+        b += int(a_correct and not b_correct)
+        c += int(not a_correct and b_correct)
+    discordant = b + c
+    if discordant == 0:
+        return {"b": b, "c": c, "statistic": 0.0, "p_value": 1.0}
+    numerator = abs(b - c)
+    if continuity_correction:
+        numerator = max(0, numerator - 1)
+    statistic = (numerator * numerator) / discordant
+    # Chi-square with 1 degree of freedom survival function.
+    p_value = math.erfc(math.sqrt(statistic / 2))
+    return {"b": b, "c": c, "statistic": statistic, "p_value": p_value}
+
+
+def compare_prediction_sets(
+    predictions_a: list[dict],
+    predictions_b: list[dict],
+    samples: int = 1000,
+    seed: int = 42,
+) -> dict[str, object]:
+    by_a = {str(row["item_id"]): row for row in predictions_a}
+    by_b = {str(row["item_id"]): row for row in predictions_b}
+    common_ids = sorted(set(by_a) & set(by_b))
+    labels = [str(by_a[item_id]["label"]) for item_id in common_ids]
+    pred_a = [str(by_a[item_id]["prediction"]) for item_id in common_ids]
+    pred_b = [str(by_b[item_id]["prediction"]) for item_id in common_ids]
+    return {
+        "n_common": len(common_ids),
+        "mcnemar": mcnemar_test(labels, pred_a, pred_b),
+        "paired_bootstrap_accuracy_delta": paired_bootstrap_accuracy_delta(
+            labels, pred_a, pred_b, samples=samples, seed=seed
+        ),
+    }
+
+
 def latency_summary(latencies_ms: Iterable[float]) -> dict[str, float]:
     values = sorted(float(value) for value in latencies_ms)
     if not values:
@@ -111,6 +190,7 @@ def summarize_predictions(predictions: list[dict]) -> dict:
     latencies = [float(row["latency_ms"]) for row in predictions if "latency_ms" in row]
     token_speeds = [float(row["tokens_per_sec"]) for row in predictions if "tokens_per_sec" in row]
     peak_vram = [float(row["peak_vram_mb"]) for row in predictions if "peak_vram_mb" in row]
+    ram_values = [float(row["ram_mb"]) for row in predictions if "ram_mb" in row]
     parse_errors = sum(1 for row in predictions if row.get("parse_error"))
 
     ci_low, ci_high = bootstrap_accuracy_ci(y_true, y_pred, samples=500) if predictions else (0.0, 0.0)
@@ -141,5 +221,9 @@ def summarize_predictions(predictions: list[dict]) -> dict:
         summary["tokens_per_sec"] = mean(token_speeds)
     if peak_vram:
         summary["peak_VRAM_or_RAM"] = max(peak_vram)
+    elif ram_values:
+        summary["peak_VRAM_or_RAM"] = max(ram_values)
+    if ram_values:
+        summary["peak_ram_mb"] = max(ram_values)
     summary.update(latency_summary(latencies))
     return summary

@@ -25,6 +25,15 @@ def gpu_memory_snapshot() -> dict[str, float]:
     return {"peak_vram_mb": float(torch.cuda.max_memory_allocated() / (1024 * 1024))}
 
 
+def memory_snapshot() -> dict[str, float]:
+    try:
+        import psutil
+    except ImportError:
+        return {"ram_mb": 0.0, **gpu_memory_snapshot()}
+    process = psutil.Process()
+    return {"ram_mb": float(process.memory_info().rss / (1024 * 1024)), **gpu_memory_snapshot()}
+
+
 def tokens_per_second(output_tokens: int, latency_ms: float) -> float:
     if latency_ms <= 0:
         return 0.0
