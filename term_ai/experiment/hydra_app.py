@@ -5,13 +5,30 @@ from pathlib import Path
 import hydra
 from omegaconf import DictConfig, OmegaConf
 
-from term_ai.contracts import RAW_GT_STATUS
+from term_ai.contracts import DEFAULT_TRAINABLE_AUG_STATUS, RAW_GT_STATUS
 from term_ai.experiment.runner import create_run_dir, init_matrix, write_resume_state, write_run_manifest
 from term_ai.experiment.workflow import run_master_workflow
 
 
 def _value(value: object) -> object | None:
     return None if value in {None, ""} else value
+
+
+def _registry(cfg: DictConfig) -> dict[str, str]:
+    if "hf_model_ids" not in cfg.model:
+        return {}
+    return {
+        str(key): str(value)
+        for key, value in OmegaConf.to_container(cfg.model.hf_model_ids, resolve=True).items()
+    }
+
+
+def _model_name_or_path(cfg: DictConfig, experiment_id: str) -> str | None:
+    configured = _value(cfg.execution.model_name_or_path)
+    if configured:
+        return str(configured)
+    registry = _registry(cfg)
+    return registry.get(experiment_id)
 
 
 def _default_metadata(cfg: DictConfig, experiment_id: str) -> str:
@@ -28,7 +45,7 @@ def _default_metadata(cfg: DictConfig, experiment_id: str) -> str:
         return str(cfg.execution.kd_metadata)
     if experiment_id.startswith("G4"):
         return str(cfg.execution.raw_metadata)
-    return str(cfg.execution.approved_metadata)
+    return str(cfg.execution.strict_judge_metadata)
 
 
 def _default_min_status(cfg: DictConfig, experiment_id: str) -> str:
@@ -42,7 +59,7 @@ def _default_min_status(cfg: DictConfig, experiment_id: str) -> str:
         or experiment_id.startswith("G4")
     ):
         return RAW_GT_STATUS
-    return "aug_judge_pass"
+    return DEFAULT_TRAINABLE_AUG_STATUS
 
 
 @hydra.main(version_base=None, config_path="../../configs/experiment", config_name="default")
@@ -82,11 +99,18 @@ def main(cfg: DictConfig) -> None:
         elif experiment_id == "B3":
             from term_ai.experiment.reranker import run_reranker
 
+            reranker_cfg = cfg.execution.reranker
             result = run_reranker(
                 metadata,
                 output_dir,
                 eval_split=eval_split,
                 min_status=min_status,
+                fine_tune=bool(reranker_cfg.fine_tune),
+                epochs=int(reranker_cfg.epochs),
+                batch_size=int(reranker_cfg.batch_size),
+                score_normalization=str(reranker_cfg.score_normalization),
+                threshold=_value(reranker_cfg.threshold),
+                threshold_split=str(reranker_cfg.threshold_split),
                 final_test_once=final_test_once,
                 test_lock_dir=test_lock_dir,
             )
@@ -110,18 +134,20 @@ def main(cfg: DictConfig) -> None:
                 limit=cfg.execution.limit,
                 input_cost_per_1m_tokens=float(api_cfg.input_cost_per_1m_tokens),
                 output_cost_per_1m_tokens=float(api_cfg.output_cost_per_1m_tokens),
+                pricing_path=_value(api_cfg.pricing_path),
                 final_test_once=final_test_once,
                 test_lock_dir=test_lock_dir,
             )
         elif experiment_id.startswith("G0"):
             from term_ai.experiment.lm_eval import run_hf_zero_shot
 
-            if not cfg.execution.model_name_or_path:
+            model_name_or_path = _model_name_or_path(cfg, experiment_id)
+            if not model_name_or_path:
                 raise ValueError("execution.model_name_or_path is required for G0")
             result = run_hf_zero_shot(
                 metadata,
                 output_dir,
-                model_name_or_path=str(cfg.execution.model_name_or_path),
+                model_name_or_path=model_name_or_path,
                 eval_split=eval_split,
                 min_status=min_status,
                 limit=cfg.execution.limit,
@@ -133,16 +159,17 @@ def main(cfg: DictConfig) -> None:
             from term_ai.experiment.training import LoRATrainingConfig, train_lora_sft
 
             train_jsonl = _value(cfg.execution.train_sft_jsonl) or (
-                cfg.data.raw_train_sft_jsonl if experiment_id.startswith("G1") else cfg.data.raw_aug_train_sft_jsonl
+                cfg.data.raw_train_sft_jsonl if experiment_id.startswith("G1") else cfg.data.raw_judge_aug_train_sft_jsonl
             )
             dev_jsonl = _value(cfg.execution.dev_sft_jsonl) or (
-                cfg.data.raw_dev_sft_jsonl if experiment_id.startswith("G1") else cfg.data.raw_aug_dev_sft_jsonl
+                cfg.data.raw_dev_sft_jsonl if experiment_id.startswith("G1") else cfg.data.raw_judge_aug_dev_sft_jsonl
             )
-            if not cfg.execution.model_name_or_path:
+            model_name_or_path = _model_name_or_path(cfg, experiment_id)
+            if not model_name_or_path:
                 raise ValueError("execution.model_name_or_path is required for G1/G2 LoRA SFT")
             adapter = train_lora_sft(
                 LoRATrainingConfig(
-                    model_name_or_path=str(cfg.execution.model_name_or_path),
+                    model_name_or_path=model_name_or_path,
                     train_jsonl=str(train_jsonl),
                     dev_jsonl=str(dev_jsonl),
                     output_dir=str(output_dir),
@@ -158,11 +185,12 @@ def main(cfg: DictConfig) -> None:
         elif experiment_id in {"G3-Gemma", "G3-Qwen"}:
             from term_ai.experiment.lora_kd import LoRAKDConfig, train_lora_sft_kd
 
-            if not cfg.execution.model_name_or_path:
+            model_name_or_path = _model_name_or_path(cfg, experiment_id)
+            if not model_name_or_path:
                 raise ValueError("execution.model_name_or_path is required for G3 LoRA KD")
             adapter = train_lora_sft_kd(
                 LoRAKDConfig(
-                    model_name_or_path=str(cfg.execution.model_name_or_path),
+                    model_name_or_path=model_name_or_path,
                     metadata_jsonl=metadata,
                     dev_metadata_jsonl=str(_value(cfg.execution.kd_dev_metadata) or metadata),
                     output_dir=str(output_dir),
@@ -174,18 +202,20 @@ def main(cfg: DictConfig) -> None:
                     lambda_soft=float(cfg.training.kd.lambda_soft),
                     include_rationale=bool(cfg.training.kd.include_rationale),
                     require_teacher_scores=bool(cfg.training.kd.require_teacher_scores),
+                    response_format=str(cfg.training.kd.response_format),
                 )
             )
             result = {"final_adapter": str(adapter)}
         elif experiment_id.startswith("G4"):
             from term_ai.experiment.quantization import compare_quantization
 
-            if not cfg.execution.model_name_or_path or not cfg.execution.adapter_path:
+            model_name_or_path = _model_name_or_path(cfg, experiment_id)
+            if not model_name_or_path or not cfg.execution.adapter_path:
                 raise ValueError("execution.model_name_or_path and execution.adapter_path are required for G4")
             result = compare_quantization(
                 metadata,
                 output_dir,
-                model_name_or_path=str(cfg.execution.model_name_or_path),
+                model_name_or_path=model_name_or_path,
                 adapter_path=str(cfg.execution.adapter_path),
                 eval_split=eval_split,
                 min_status=min_status,
@@ -207,22 +237,34 @@ def main(cfg: DictConfig) -> None:
                 require_teacher_scores=bool(cfg.training.kd.require_teacher_scores),
             )
         elif experiment_id == "H1":
-            from term_ai.experiment.hybrid import run_hybrid_policy
+            from term_ai.experiment.hybrid import run_hybrid_policy, tune_hybrid_policy
 
             if not cfg.execution.primary_predictions or not cfg.execution.fallback_predictions:
                 raise ValueError("H1 requires execution.primary_predictions and execution.fallback_predictions")
             hybrid_cfg = cfg.execution.hybrid
-            result = run_hybrid_policy(
-                cfg.execution.primary_predictions,
-                cfg.execution.fallback_predictions,
-                output_dir,
-                cross_encoder_predictions=_value(cfg.execution.cross_encoder_predictions),
-                low_confidence_threshold=float(hybrid_cfg.low_confidence_threshold),
-                high_confidence_threshold=float(hybrid_cfg.high_confidence_threshold),
-                primary_cost_per_1000=float(hybrid_cfg.primary_cost_per_1000),
-                cross_encoder_cost_per_1000=float(hybrid_cfg.cross_encoder_cost_per_1000),
-                fallback_cost_per_1000=float(hybrid_cfg.fallback_cost_per_1000),
-            )
+            if bool(hybrid_cfg.tune_policy):
+                result = tune_hybrid_policy(
+                    cfg.execution.primary_predictions,
+                    cfg.execution.fallback_predictions,
+                    output_dir,
+                    cross_encoder_predictions=_value(cfg.execution.cross_encoder_predictions),
+                    threshold_grid=[float(value) for value in hybrid_cfg.threshold_grid],
+                    primary_cost_per_1000=float(hybrid_cfg.primary_cost_per_1000),
+                    cross_encoder_cost_per_1000=float(hybrid_cfg.cross_encoder_cost_per_1000),
+                    fallback_cost_per_1000=float(hybrid_cfg.fallback_cost_per_1000),
+                )
+            else:
+                result = run_hybrid_policy(
+                    cfg.execution.primary_predictions,
+                    cfg.execution.fallback_predictions,
+                    output_dir,
+                    cross_encoder_predictions=_value(cfg.execution.cross_encoder_predictions),
+                    low_confidence_threshold=float(hybrid_cfg.low_confidence_threshold),
+                    high_confidence_threshold=float(hybrid_cfg.high_confidence_threshold),
+                    primary_cost_per_1000=float(hybrid_cfg.primary_cost_per_1000),
+                    cross_encoder_cost_per_1000=float(hybrid_cfg.cross_encoder_cost_per_1000),
+                    fallback_cost_per_1000=float(hybrid_cfg.fallback_cost_per_1000),
+                )
         else:
             raise ValueError(f"Hydra runner for {experiment_id} is not implemented")
         print(OmegaConf.to_yaml(OmegaConf.create(result), resolve=True))

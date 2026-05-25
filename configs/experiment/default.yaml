@@ -1,24 +1,38 @@
 defaults: []
 
 data:
-  sft_jsonl: data/sft/approved_sft_v1.jsonl
+  sft_jsonl: data/sft/judge_validated_train_sft_v1.jsonl
   raw_train_sft_jsonl: data/sft/raw_train_sft_v1.jsonl
   raw_dev_sft_jsonl: data/sft/raw_dev_sft_v1.jsonl
-  raw_aug_train_sft_jsonl: data/sft/raw_aug_train_sft_v1.jsonl
-  raw_aug_dev_sft_jsonl: data/sft/raw_aug_dev_sft_v1.jsonl
+  raw_judge_aug_train_sft_jsonl: data/sft/raw_judge_aug_train_sft_v1.jsonl
+  raw_judge_aug_dev_sft_jsonl: data/sft/raw_judge_aug_dev_sft_v1.jsonl
   split_manifest: data/splits/word_split_seed42.json
   augmentation_metadata: data/metadata/aug_judge_pass_v1.jsonl
   strict_judge_metadata: data/metadata/aug_judge_pass_v1.jsonl
+  human_approved_metadata: data/metadata/aug_human_pass_v1.jsonl
+  kd_metadata: data/metadata/kd_train_view_v1.jsonl
+  kd_dev_metadata: data/metadata/kd_dev_view_v1.jsonl
   raw_metadata: data/metadata/raw_mcq_v1.jsonl
   validation_metadata: data/metadata/validation_v1.jsonl
   data_version: raw_v1
-  augmentation_version: aug_approved_v1
+  augmentation_version: aug_judge_validated_v1
 
 model:
   matrix_path: experiments/model_matrix.json
   primary_small_models:
     - gemma2 2b
     - qwen2.5 3b
+  hf_model_ids:
+    gemma2 2b: google/gemma-2-2b-it
+    qwen2.5 3b: Qwen/Qwen2.5-3B-Instruct
+    G0-Gemma: google/gemma-2-2b-it
+    G0-Qwen: Qwen/Qwen2.5-3B-Instruct
+    G1-Gemma: google/gemma-2-2b-it
+    G1-Qwen: Qwen/Qwen2.5-3B-Instruct
+    G2-Gemma: google/gemma-2-2b-it
+    G2-Qwen: Qwen/Qwen2.5-3B-Instruct
+    G3-Gemma: google/gemma-2-2b-it
+    G3-Qwen: Qwen/Qwen2.5-3B-Instruct
   experiment_id: B0
 
 execution:
@@ -27,9 +41,10 @@ execution:
   metadata: null
   min_status: null
   raw_metadata: data/metadata/raw_mcq_v1.jsonl
-  approved_metadata: data/metadata/aug_judge_pass_v1.jsonl
-  kd_metadata: data/metadata/aug_judge_pass_v1.jsonl
-  kd_dev_metadata: data/metadata/aug_judge_pass_v1.jsonl
+  strict_judge_metadata: data/metadata/aug_judge_pass_v1.jsonl
+  human_approved_metadata: data/metadata/aug_human_pass_v1.jsonl
+  kd_metadata: data/metadata/kd_train_view_v1.jsonl
+  kd_dev_metadata: data/metadata/kd_dev_view_v1.jsonl
   train_sft_jsonl: null
   dev_sft_jsonl: null
   train_metadata: null
@@ -41,12 +56,20 @@ execution:
   limit: null
   test_lock_dir: runs/_test_locks
   allow_repeat_test: false
+  reranker:
+    fine_tune: false
+    epochs: 1
+    batch_size: 8
+    score_normalization: sigmoid
+    threshold: null
+    threshold_split: dev
   api_recheck:
     provider: openai
     model: gpt-5.4-mini
     env_path: .env
     base_url: null
     api_key_env: null
+    pricing_path: null
     requests_per_second: 1.0
     input_cost_per_1m_tokens: 0.0
     output_cost_per_1m_tokens: 0.0
@@ -54,6 +77,14 @@ execution:
   hybrid:
     low_confidence_threshold: 0.4
     high_confidence_threshold: 0.7
+    tune_policy: false
+    threshold_grid:
+      - 0.3
+      - 0.4
+      - 0.5
+      - 0.6
+      - 0.7
+      - 0.8
     primary_cost_per_1000: 0.0
     cross_encoder_cost_per_1000: 0.0
     fallback_cost_per_1000: 0.0
@@ -73,6 +104,7 @@ training:
     mu_margin: 0.2
     require_teacher_scores: true
     include_rationale: true
+    response_format: json_distribution
   quantization:
     compare_same_checkpoint: true
     modes:
@@ -128,4 +160,6 @@ workflow:
       model: gpt-5.4-mini
       env_path: .env
       requests_per_second: 1.0
-    approved_metadata: null
+    strict_judge_metadata: null
+    raw_teacher_scores: null
+    phase_jobs: []
