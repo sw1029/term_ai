@@ -1,0 +1,43 @@
+defaults: []
+
+data:
+  input_path: pharaprased_voca.jsonl
+  output_dir: data
+  raw_anchor_version: raw_v1
+  seed: 42
+
+schema:
+  sft_record_contract: messages_only
+  metadata_contract: separate_artifacts
+  task_ratios:
+    Synonym Selection: 0.40
+    Antonym Selection: 0.20
+    Context Cloze: 0.25
+    Sense Disambiguation: 0.15
+
+teacher:
+  provider: openai
+  model: "gpt 5.4 mini"
+  env_path: .env
+  prompt_version: aug_prompt_v1
+
+validation:
+  auto_filter:
+    min_context_words: 5
+    max_context_words: 100
+    low_score_margin: 0.15
+    high_similarity_threshold: 0.92
+  judge_accept:
+    semantic_correctness: 2
+    distractor_validity_min: 1
+    context_naturalness_min: 1
+    leakage_check: pass
+  approved_min_status: aug_human_pass
+
+outputs:
+  anchors: data/processed/anchors_v1.jsonl
+  split_manifest: data/splits/word_split_seed42.json
+  candidates_dir: data/aug
+  approved_sft: data/sft/approved_sft_v1.jsonl
+  metadata_dir: data/metadata
+  version_manifest: data/manifests/version_manifest.json
