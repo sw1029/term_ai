@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from term_ai.contracts import APPROVED_AUG_STATUS
+from term_ai.contracts import RAW_GT_STATUS
 from term_ai.experiment.lm_eval import run_hf_zero_shot
 from term_ai.experiment.test_lock import enforce_final_test_once
 
@@ -16,17 +16,18 @@ def compare_quantization(
     model_name_or_path: str,
     adapter_path: str | Path,
     eval_split: str = "dev",
-    min_status: str = APPROVED_AUG_STATUS,
+    min_status: str = RAW_GT_STATUS,
     limit: int | None = None,
     g3_checkpoint_id: str | None = None,
     final_test_once: bool = True,
+    test_lock_dir: str | Path | None = None,
 ) -> dict[str, Any]:
     adapter = Path(adapter_path)
     if not adapter.exists():
         raise FileNotFoundError(f"G4 requires an existing G3 LoRA adapter checkpoint: {adapter}")
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
-    enforce_final_test_once(output, "G4", eval_split, enabled=final_test_once)
+    enforce_final_test_once(output, "G4", eval_split, enabled=final_test_once, lock_dir=test_lock_dir)
     results: dict[str, Any] = {}
     for mode in ("fp16", "8bit", "4bit"):
         results[mode] = run_hf_zero_shot(
@@ -39,6 +40,7 @@ def compare_quantization(
             limit=limit,
             adapter_path=adapter,
             final_test_once=False,
+            experiment_id=f"G4-{mode}",
         )
         results[mode]["g3_checkpoint_id"] = g3_checkpoint_id or str(adapter)
     (output / "quantization_compare.json").write_text(
@@ -54,9 +56,10 @@ def main() -> None:
     parser.add_argument("--model-name-or-path", required=True)
     parser.add_argument("--adapter-path", required=True)
     parser.add_argument("--eval-split", default="dev")
-    parser.add_argument("--min-status", default=APPROVED_AUG_STATUS)
+    parser.add_argument("--min-status", default=RAW_GT_STATUS)
     parser.add_argument("--limit", type=int)
     parser.add_argument("--g3-checkpoint-id")
+    parser.add_argument("--test-lock-dir")
     parser.add_argument("--allow-repeat-test", action="store_true")
     args = parser.parse_args()
     results = compare_quantization(
@@ -69,6 +72,7 @@ def main() -> None:
         limit=args.limit,
         g3_checkpoint_id=args.g3_checkpoint_id,
         final_test_once=not args.allow_repeat_test,
+        test_lock_dir=args.test_lock_dir,
     )
     print(json.dumps(results, ensure_ascii=False, indent=2))
 

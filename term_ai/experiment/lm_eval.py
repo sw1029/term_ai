@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from term_ai.contracts import APPROVED_AUG_STATUS, write_jsonl
+from term_ai.contracts import RAW_GT_STATUS, write_jsonl
 from term_ai.experiment.metrics import summarize_predictions
 from term_ai.experiment.mcq import load_mcq_items, parse_answer_letter, prediction_row
 from term_ai.experiment.ops import memory_snapshot, timed, tokens_per_second
@@ -17,12 +17,14 @@ def run_hf_zero_shot(
     output_dir: str | Path,
     model_name_or_path: str,
     eval_split: str = "dev",
-    min_status: str = APPROVED_AUG_STATUS,
+    min_status: str = RAW_GT_STATUS,
     max_new_tokens: int = 64,
     quantization: str | None = None,
     limit: int | None = None,
     adapter_path: str | Path | None = None,
     final_test_once: bool = True,
+    experiment_id: str | None = None,
+    test_lock_dir: str | Path | None = None,
 ) -> dict[str, Any]:
     try:
         import torch
@@ -32,11 +34,13 @@ def run_hf_zero_shot(
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    lock_experiment_id = experiment_id or ("G4" if adapter_path and quantization else "G0")
     enforce_final_test_once(
         output_dir,
-        "G4" if adapter_path and quantization else "G0",
+        lock_experiment_id,
         eval_split,
         enabled=final_test_once,
+        lock_dir=test_lock_dir,
     )
 
     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
@@ -64,6 +68,8 @@ def run_hf_zero_shot(
         tokenizer.pad_token = tokenizer.eos_token
 
     items = [item for item in load_mcq_items(metadata_path, min_status=min_status) if item.split == eval_split]
+    if not items:
+        raise ValueError(f"no LM eval items: split={eval_split}, min_status={min_status}")
     if limit is not None:
         items = items[:limit]
     predictions: list[dict[str, Any]] = []
@@ -108,11 +114,13 @@ def main() -> None:
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--model-name-or-path", required=True)
     parser.add_argument("--eval-split", default="dev")
-    parser.add_argument("--min-status", default=APPROVED_AUG_STATUS)
+    parser.add_argument("--min-status", default=RAW_GT_STATUS)
     parser.add_argument("--max-new-tokens", type=int, default=64)
     parser.add_argument("--quantization", choices=["fp16", "8bit", "4bit"])
     parser.add_argument("--limit", type=int)
     parser.add_argument("--adapter-path")
+    parser.add_argument("--experiment-id")
+    parser.add_argument("--test-lock-dir")
     parser.add_argument("--allow-repeat-test", action="store_true")
     args = parser.parse_args()
     metrics = run_hf_zero_shot(
@@ -126,6 +134,8 @@ def main() -> None:
         limit=args.limit,
         adapter_path=args.adapter_path,
         final_test_once=not args.allow_repeat_test,
+        experiment_id=args.experiment_id,
+        test_lock_dir=args.test_lock_dir,
     )
     print(json.dumps(metrics, ensure_ascii=False, indent=2))
 

@@ -170,12 +170,16 @@ def run_baseline(
     threshold_split: str = "dev",
     threshold: float | None = None,
     final_test_once: bool = True,
+    test_lock_dir: str | Path | None = None,
 ) -> dict[str, Any]:
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
-    enforce_final_test_once(output, f"B0_{method}", eval_split, enabled=final_test_once)
+    experiment_id = {"b0": "B0", "logistic": "B1", "mlp": "B2"}.get(method, method)
+    enforce_final_test_once(output, experiment_id, eval_split, enabled=final_test_once, lock_dir=test_lock_dir)
     items = load_mcq_items(metadata_path, min_status=min_status)
     eval_items = [item for item in items if item.split == eval_split]
+    if not eval_items:
+        raise ValueError(f"no eval items for {experiment_id}: split={eval_split}, min_status={min_status}")
     train_source = train_metadata_path or metadata_path
     train_items = [item for item in load_mcq_items(train_source, min_status=min_status) if item.split == train_split]
 
@@ -223,6 +227,7 @@ def main() -> None:
     parser.add_argument("--threshold-metadata")
     parser.add_argument("--threshold-split", default="dev")
     parser.add_argument("--threshold", type=float)
+    parser.add_argument("--test-lock-dir")
     parser.add_argument("--allow-repeat-test", action="store_true")
     args = parser.parse_args()
     metrics = run_baseline(
@@ -238,6 +243,7 @@ def main() -> None:
         threshold_split=args.threshold_split,
         threshold=args.threshold,
         final_test_once=not args.allow_repeat_test,
+        test_lock_dir=args.test_lock_dir,
     )
     print(json.dumps(metrics, ensure_ascii=False, indent=2))
 

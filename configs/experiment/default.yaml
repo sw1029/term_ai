@@ -2,8 +2,14 @@ defaults: []
 
 data:
   sft_jsonl: data/sft/approved_sft_v1.jsonl
+  raw_train_sft_jsonl: data/sft/raw_train_sft_v1.jsonl
+  raw_dev_sft_jsonl: data/sft/raw_dev_sft_v1.jsonl
+  raw_aug_train_sft_jsonl: data/sft/raw_aug_train_sft_v1.jsonl
+  raw_aug_dev_sft_jsonl: data/sft/raw_aug_dev_sft_v1.jsonl
   split_manifest: data/splits/word_split_seed42.json
-  augmentation_metadata: data/metadata/aug_human_pass_v1.jsonl
+  augmentation_metadata: data/metadata/aug_judge_pass_v1.jsonl
+  strict_judge_metadata: data/metadata/aug_judge_pass_v1.jsonl
+  raw_metadata: data/metadata/raw_mcq_v1.jsonl
   validation_metadata: data/metadata/validation_v1.jsonl
   data_version: raw_v1
   augmentation_version: aug_approved_v1
@@ -18,14 +24,39 @@ model:
 execution:
   run: false
   output_dir: runs/hydra_run
-  metadata: data/metadata/raw_mcq_v1.jsonl
+  metadata: null
+  min_status: null
+  raw_metadata: data/metadata/raw_mcq_v1.jsonl
+  approved_metadata: data/metadata/aug_judge_pass_v1.jsonl
+  kd_metadata: data/metadata/aug_judge_pass_v1.jsonl
+  kd_dev_metadata: data/metadata/aug_judge_pass_v1.jsonl
+  train_sft_jsonl: null
+  dev_sft_jsonl: null
   train_metadata: null
   primary_predictions: null
+  cross_encoder_predictions: null
   fallback_predictions: null
   model_name_or_path: null
   adapter_path: null
   limit: null
+  test_lock_dir: runs/_test_locks
   allow_repeat_test: false
+  api_recheck:
+    provider: openai
+    model: gpt-5.4-mini
+    env_path: .env
+    base_url: null
+    api_key_env: null
+    requests_per_second: 1.0
+    input_cost_per_1m_tokens: 0.0
+    output_cost_per_1m_tokens: 0.0
+    confidence_threshold: 0.7
+  hybrid:
+    low_confidence_threshold: 0.4
+    high_confidence_threshold: 0.7
+    primary_cost_per_1000: 0.0
+    cross_encoder_cost_per_1000: 0.0
+    fallback_cost_per_1000: 0.0
 
 training:
   framework: pytorch
@@ -40,6 +71,8 @@ training:
     enabled: false
     lambda_soft: 0.5
     mu_margin: 0.2
+    require_teacher_scores: true
+    include_rationale: true
   quantization:
     compare_same_checkpoint: true
     modes:

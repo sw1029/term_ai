@@ -2,8 +2,18 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 from typing import Any
+
+
+def default_test_lock_dir() -> Path:
+    """Use a repository-scoped lock so changing output_dir cannot re-open test."""
+
+    configured = os.environ.get("TERM_AI_TEST_LOCK_DIR")
+    if configured:
+        return Path(configured)
+    return Path(__file__).resolve().parents[2] / "runs" / "_test_locks"
 
 
 def enforce_final_test_once(
@@ -17,7 +27,7 @@ def enforce_final_test_once(
         return None
 
     output = Path(output_dir)
-    locks = Path(lock_dir) if lock_dir is not None else output.parent / "_test_locks"
+    locks = Path(lock_dir) if lock_dir is not None else default_test_lock_dir()
     locks.mkdir(parents=True, exist_ok=True)
     lock_path = locks / f"{experiment_id}_test.lock.json"
     payload: dict[str, Any] = {

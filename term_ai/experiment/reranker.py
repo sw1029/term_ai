@@ -7,7 +7,7 @@ from typing import Any
 
 import numpy as np
 
-from term_ai.contracts import APPROVED_AUG_STATUS, answer_label, write_jsonl
+from term_ai.contracts import RAW_GT_STATUS, answer_label, write_jsonl
 from term_ai.experiment.metrics import summarize_predictions
 from term_ai.experiment.mcq import MCQItem, load_mcq_items, prediction_row
 from term_ai.experiment.ops import memory_snapshot, timed
@@ -30,12 +30,13 @@ def run_reranker(
     output_dir: str | Path,
     model_name: str = "BAAI/bge-reranker-v2-m3",
     eval_split: str = "dev",
-    min_status: str = APPROVED_AUG_STATUS,
+    min_status: str = RAW_GT_STATUS,
     train_split: str = "train",
     fine_tune: bool = False,
     epochs: int = 1,
     batch_size: int = 8,
     final_test_once: bool = True,
+    test_lock_dir: str | Path | None = None,
 ) -> dict[str, Any]:
     try:
         from sentence_transformers import CrossEncoder
@@ -44,10 +45,12 @@ def run_reranker(
 
     all_items = load_mcq_items(metadata_path, min_status=min_status)
     items = [item for item in all_items if item.split == eval_split]
+    if not items:
+        raise ValueError(f"no reranker eval items: split={eval_split}, min_status={min_status}")
     model = CrossEncoder(model_name)
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
-    enforce_final_test_once(output, "B3", eval_split, enabled=final_test_once)
+    enforce_final_test_once(output, "B3", eval_split, enabled=final_test_once, lock_dir=test_lock_dir)
     if fine_tune:
         try:
             from torch.utils.data import DataLoader
@@ -88,11 +91,12 @@ def main() -> None:
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--model-name", default="BAAI/bge-reranker-v2-m3")
     parser.add_argument("--eval-split", default="dev")
-    parser.add_argument("--min-status", default=APPROVED_AUG_STATUS)
+    parser.add_argument("--min-status", default=RAW_GT_STATUS)
     parser.add_argument("--train-split", default="train")
     parser.add_argument("--fine-tune", action="store_true")
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--batch-size", type=int, default=8)
+    parser.add_argument("--test-lock-dir")
     parser.add_argument("--allow-repeat-test", action="store_true")
     args = parser.parse_args()
     metrics = run_reranker(
@@ -106,6 +110,7 @@ def main() -> None:
         epochs=args.epochs,
         batch_size=args.batch_size,
         final_test_once=not args.allow_repeat_test,
+        test_lock_dir=args.test_lock_dir,
     )
     print(json.dumps(metrics, ensure_ascii=False, indent=2))
 
