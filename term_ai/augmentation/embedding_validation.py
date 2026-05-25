@@ -19,13 +19,18 @@ def cosine(left: list[float], right: list[float]) -> float:
     return dot / (norm_left * norm_right)
 
 
-def option_top2_similarity(model: Any, options: list[str]) -> float:
+def option_similarity_signals(model: Any, options: list[str]) -> tuple[float, float | None]:
     vectors = model.encode(options, normalize_embeddings=True)
     scores: list[float] = []
     for i in range(len(vectors)):
         for j in range(i + 1, len(vectors)):
             scores.append(float(cosine(vectors[i], vectors[j])))
-    return max(scores) if scores else 0.0
+    if not scores:
+        return 0.0, None
+    scores.sort(reverse=True)
+    top = scores[0]
+    gap = top - scores[1] if len(scores) > 1 else None
+    return top, gap
 
 
 def add_embedding_similarity(
@@ -51,8 +56,10 @@ def add_embedding_similarity(
             payload = row.get("payload") or {}
             options = [str(option) for option in payload.get("options") or []]
             if len(options) == 4:
-                sim = option_top2_similarity(model, options)
+                sim, gap = option_similarity_signals(model, options)
                 payload["embedding_top2_similarity"] = sim
+                if gap is not None:
+                    payload["embedding_top2_gap"] = gap
                 if sim >= high_similarity_threshold:
                     counts["high_similarity"] += 1
             row["payload"] = payload

@@ -24,6 +24,8 @@ class MCQItem:
     source: str = ""
     dataset_view: str = ""
     stress_tags: tuple[str, ...] = ()
+    embedding_top2_similarity: float | None = None
+    embedding_top2_gap: float | None = None
 
     @property
     def label(self) -> str:
@@ -64,6 +66,8 @@ def load_mcq_items(metadata_path: str | Path, min_status: str = APPROVED_AUG_STA
             task_type = str(payload.get("source_task_type") or payload.get("task_type") or "")
             teacher_scores = payload.get("teacher_scores") or row.get("teacher_scores")
             stress_tags = tuple(str(tag) for tag in row.get("stress_tags") or payload.get("stress_tags") or [])
+            top2_similarity = payload.get("embedding_top2_similarity")
+            top2_gap = payload.get("embedding_top2_gap")
             items.append(
                 MCQItem(
                     item_id=str(row.get("item_id") or f"line-{line_no}"),
@@ -79,6 +83,10 @@ def load_mcq_items(metadata_path: str | Path, min_status: str = APPROVED_AUG_STA
                     source=str(row.get("source") or ""),
                     dataset_view=str(row.get("dataset_view") or ""),
                     stress_tags=stress_tags,
+                    embedding_top2_similarity=(
+                        float(top2_similarity) if isinstance(top2_similarity, (int, float)) else None
+                    ),
+                    embedding_top2_gap=float(top2_gap) if isinstance(top2_gap, (int, float)) else None,
                 )
             )
     return items
@@ -115,7 +123,15 @@ def prediction_row(
         "prediction": prediction,
         "confidence": confidence,
         "latency_ms": latency_ms,
+        "status": item.status,
+        "source": item.source,
+        "dataset_view": item.dataset_view,
+        "stress_tags": list(item.stress_tags),
     }
+    if item.embedding_top2_similarity is not None:
+        row["embedding_top2_similarity"] = item.embedding_top2_similarity
+    if item.embedding_top2_gap is not None:
+        row["embedding_top2_gap"] = item.embedding_top2_gap
     if extra:
         row.update(extra)
     return row

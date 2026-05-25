@@ -191,6 +191,7 @@ def summarize_predictions(predictions: list[dict]) -> dict:
     token_speeds = [float(row["tokens_per_sec"]) for row in predictions if "tokens_per_sec" in row]
     peak_vram = [float(row["peak_vram_mb"]) for row in predictions if "peak_vram_mb" in row]
     ram_values = [float(row["ram_mb"]) for row in predictions if "ram_mb" in row]
+    estimated_costs = [float(row["estimated_cost_usd"]) for row in predictions if "estimated_cost_usd" in row]
     parse_errors = sum(1 for row in predictions if row.get("parse_error"))
 
     ci_low, ci_high = bootstrap_accuracy_ci(y_true, y_pred, samples=500) if predictions else (0.0, 0.0)
@@ -219,6 +220,10 @@ def summarize_predictions(predictions: list[dict]) -> dict:
     }
     if token_speeds:
         summary["tokens_per_sec"] = mean(token_speeds)
+    if estimated_costs:
+        total_cost = sum(estimated_costs)
+        summary["total_estimated_cost_usd"] = total_cost
+        summary["cost_per_1000_questions"] = total_cost / len(predictions) * 1000 if predictions else 0.0
     if peak_vram:
         summary["peak_VRAM_or_RAM"] = max(peak_vram)
     elif ram_values:
