@@ -1,0 +1,13 @@
+{
+  "created_at": "2026-05-25T19:03:03.712799+00:00",
+  "input_path": "pharaprased_voca.jsonl",
+  "anchor_path": "data\\processed\\anchors_v1.jsonl",
+  "split_manifest": "data\\splits\\word_split_seed42.json",
+  "seed": 42,
+  "anchor_count": 8274,
+  "word_count": 2091,
+  "duplicate_anchor_count": 531,
+  "data_version": "raw_v1",
+  "split_version": "word_split_seed42",
+  "schema_contract": "sft_messages_only"
+}
