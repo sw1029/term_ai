@@ -1,0 +1,67 @@
+defaults: []
+
+data:
+  sft_jsonl: data/sft/approved_sft_v1.jsonl
+  split_manifest: data/splits/word_split_seed42.json
+  augmentation_metadata: data/metadata/aug_human_pass_v1.jsonl
+  validation_metadata: data/metadata/validation_v1.jsonl
+  data_version: raw_v1
+  augmentation_version: aug_approved_v1
+
+model:
+  matrix_path: experiments/model_matrix.json
+  primary_small_models:
+    - gemma2 2b
+    - qwen2.5 3b
+  experiment_id: B0
+
+training:
+  framework: pytorch
+  sft_method: lora
+  resume: true
+  weight_backup: true
+  lora:
+    r: 8
+    alpha: 16
+    dropout: 0.05
+  kd:
+    enabled: false
+    lambda_soft: 0.5
+    mu_margin: 0.2
+  quantization:
+    compare_same_checkpoint: true
+    modes:
+      - fp16
+      - 8bit
+      - 4bit
+
+evaluation:
+  split: dev
+  final_test_once: true
+  metrics:
+    - Accuracy
+    - Macro-F1
+    - Class-wise F1
+    - ECE
+    - Brier Score
+    - Bootstrap 95% CI
+    - latency_p50
+    - latency_p95
+    - tokens_per_sec
+    - peak_VRAM_or_RAM
+    - cost_per_1000_questions
+    - fallback_rate
+    - parse_error_rate
+
+logging:
+  runs_dir: runs
+  metric_log: metric_log.json
+  prediction_log: prediction_log.jsonl
+  checkpoint_dir: checkpoints
+  backup_dir: backups
+
+reproducibility:
+  seed: 42
+  split_version: word_split_seed42
+  prompt_version: aug_prompt_v1
+  config_snapshot: true

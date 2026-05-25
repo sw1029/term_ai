@@ -1,0 +1,189 @@
+[
+  {
+    "experiment_id": "B0",
+    "method": "mxbai threshold",
+    "training_data": "none",
+    "purpose": "current scoring reproduction",
+    "group": "baseline",
+    "requires_training": false,
+    "requires_generation": false,
+    "uses_kd": false,
+    "quantization": null
+  },
+  {
+    "experiment_id": "B1",
+    "method": "mxbai + logistic",
+    "training_data": "raw train",
+    "purpose": "linear scorer comparison",
+    "group": "baseline",
+    "requires_training": true,
+    "requires_generation": false,
+    "uses_kd": false,
+    "quantization": null
+  },
+  {
+    "experiment_id": "B2",
+    "method": "mxbai + MLP",
+    "training_data": "raw train",
+    "purpose": "nonlinear scorer comparison",
+    "group": "baseline",
+    "requires_training": true,
+    "requires_generation": false,
+    "uses_kd": false,
+    "quantization": null
+  },
+  {
+    "experiment_id": "B3",
+    "method": "cross-encoder/reranker",
+    "training_data": "raw train or zero-shot",
+    "purpose": "strong discriminative baseline",
+    "group": "baseline",
+    "requires_training": true,
+    "requires_generation": false,
+    "uses_kd": false,
+    "quantization": null
+  },
+  {
+    "experiment_id": "B4",
+    "method": "Qwen/API recheck",
+    "training_data": "none",
+    "purpose": "current fallback comparison",
+    "group": "baseline",
+    "requires_training": false,
+    "requires_generation": true,
+    "uses_kd": false,
+    "quantization": null
+  },
+  {
+    "experiment_id": "G0-Gemma",
+    "method": "gemma2 2b zero-shot",
+    "training_data": "none",
+    "purpose": "small LM zero-shot",
+    "group": "small_lm",
+    "requires_training": false,
+    "requires_generation": true,
+    "uses_kd": false,
+    "quantization": null
+  },
+  {
+    "experiment_id": "G0-Qwen",
+    "method": "qwen2.5 3b zero-shot",
+    "training_data": "none",
+    "purpose": "small LM zero-shot",
+    "group": "small_lm",
+    "requires_training": false,
+    "requires_generation": true,
+    "uses_kd": false,
+    "quantization": null
+  },
+  {
+    "experiment_id": "G1-Gemma",
+    "method": "gemma2 2b LoRA SFT",
+    "training_data": "raw train",
+    "purpose": "SFT effect",
+    "group": "small_lm",
+    "requires_training": true,
+    "requires_generation": true,
+    "uses_kd": false,
+    "quantization": null
+  },
+  {
+    "experiment_id": "G1-Qwen",
+    "method": "qwen2.5 3b LoRA SFT",
+    "training_data": "raw train",
+    "purpose": "SFT effect",
+    "group": "small_lm",
+    "requires_training": true,
+    "requires_generation": true,
+    "uses_kd": false,
+    "quantization": null
+  },
+  {
+    "experiment_id": "G2-Gemma",
+    "method": "gemma2 2b LoRA SFT",
+    "training_data": "raw + approved aug",
+    "purpose": "augmentation effect",
+    "group": "small_lm",
+    "requires_training": true,
+    "requires_generation": true,
+    "uses_kd": false,
+    "quantization": null
+  },
+  {
+    "experiment_id": "G2-Qwen",
+    "method": "qwen2.5 3b LoRA SFT",
+    "training_data": "raw + approved aug",
+    "purpose": "augmentation effect",
+    "group": "small_lm",
+    "requires_training": true,
+    "requires_generation": true,
+    "uses_kd": false,
+    "quantization": null
+  },
+  {
+    "experiment_id": "G3-Gemma",
+    "method": "gemma2 2b LoRA SFT + KD",
+    "training_data": "raw + approved aug + teacher score",
+    "purpose": "KD effect",
+    "group": "small_lm",
+    "requires_training": true,
+    "requires_generation": true,
+    "uses_kd": true,
+    "quantization": null
+  },
+  {
+    "experiment_id": "G3-Qwen",
+    "method": "qwen2.5 3b LoRA SFT + KD",
+    "training_data": "raw + approved aug + teacher score",
+    "purpose": "KD effect",
+    "group": "small_lm",
+    "requires_training": true,
+    "requires_generation": true,
+    "uses_kd": true,
+    "quantization": null
+  },
+  {
+    "experiment_id": "G4-8bit",
+    "method": "G3 checkpoint 8bit",
+    "training_data": "same G3 checkpoint",
+    "purpose": "quantization effect",
+    "group": "quantization",
+    "requires_training": false,
+    "requires_generation": true,
+    "uses_kd": true,
+    "quantization": "8bit"
+  },
+  {
+    "experiment_id": "G4-4bit",
+    "method": "G3 checkpoint 4bit",
+    "training_data": "same G3 checkpoint",
+    "purpose": "quantization effect",
+    "group": "quantization",
+    "requires_training": false,
+    "requires_generation": true,
+    "uses_kd": true,
+    "quantization": "4bit"
+  },
+  {
+    "experiment_id": "E1",
+    "method": "embedding scorer KD",
+    "training_data": "raw + teacher score",
+    "purpose": "KD without generative LM",
+    "group": "baseline",
+    "requires_training": true,
+    "requires_generation": false,
+    "uses_kd": true,
+    "quantization": null
+  },
+  {
+    "experiment_id": "H1",
+    "method": "scorer + fallback hybrid",
+    "training_data": "dev-tuned policy",
+    "purpose": "deployment structure",
+    "group": "hybrid",
+    "requires_training": false,
+    "requires_generation": false,
+    "uses_kd": false,
+    "quantization": null
+  }
+]
