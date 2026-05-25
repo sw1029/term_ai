@@ -29,15 +29,21 @@ class AutoFilter:
 
     def __init__(
         self,
-        min_context_words: int = 5,
-        max_context_words: int = 100,
+        min_context_words: int = 20,
+        max_context_words: int = 80,
         low_score_margin: float = 0.15,
         high_similarity_threshold: float = 0.92,
+        blocking_warnings: set[str] | None = None,
     ) -> None:
         self.min_context_words = min_context_words
         self.max_context_words = max_context_words
         self.low_score_margin = low_score_margin
         self.high_similarity_threshold = high_similarity_threshold
+        self.blocking_warnings = blocking_warnings or {
+            "context_length_outlier",
+            "low_teacher_score_margin",
+            "near_duplicate_options",
+        }
 
     def validate_payload(self, payload: dict[str, Any], item_id: str | None = None) -> AutoFilterResult:
         errors: list[str] = []
@@ -89,7 +95,7 @@ class AutoFilter:
             else:
                 word_count = len(context.split())
                 if word_count < self.min_context_words or word_count > self.max_context_words:
-                    warnings.append("context_length_outlier")
+                    errors.append("context_length_outlier")
 
                 if isinstance(answer_idx, int) and 0 <= answer_idx < len(options):
                     answer = options[answer_idx]
@@ -115,7 +121,8 @@ class AutoFilter:
         if isinstance(similarity, (int, float)) and float(similarity) >= self.high_similarity_threshold:
             warnings.append("high_embedding_top2_similarity")
 
-        status = "aug_auto_pass" if not errors else "rejected"
+        blocking = set(warnings) & self.blocking_warnings
+        status = "aug_auto_pass" if not errors and not blocking else "rejected"
         return AutoFilterResult(item_id=item_id, status=status, errors=errors, warnings=warnings)
 
 

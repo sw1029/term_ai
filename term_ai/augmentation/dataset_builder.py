@@ -162,7 +162,7 @@ def build_raw_mcq_metadata_from_anchors(
 def build_approved_sft_by_split(
     metadata_path: str | Path,
     output_dir: str | Path,
-    min_status: str = "aug_human_pass",
+    min_status: str = "aug_judge_pass",
 ) -> dict[str, int]:
     rows = load_jsonl(metadata_path)
     output = Path(output_dir)
@@ -187,7 +187,7 @@ def build_strict_eval_sets(
     raw_metadata_path: str | Path,
     approved_metadata_path: str | Path,
     output_dir: str | Path,
-    min_status: str = "aug_human_pass",
+    min_status: str = "aug_judge_pass",
 ) -> dict[str, int]:
     """Write final evaluation views with raw GT and generated cloze separated."""
 
@@ -295,13 +295,13 @@ def main() -> None:
     approved = subparsers.add_parser("approved-sft")
     approved.add_argument("--metadata", required=True)
     approved.add_argument("--output-dir", default="data/sft")
-    approved.add_argument("--min-status", default="aug_human_pass")
+    approved.add_argument("--min-status", default="aug_judge_pass")
 
     eval_sets = subparsers.add_parser("eval-sets")
     eval_sets.add_argument("--raw-metadata", required=True)
     eval_sets.add_argument("--approved-metadata", required=True)
     eval_sets.add_argument("--output-dir", default="data/eval")
-    eval_sets.add_argument("--min-status", default="aug_human_pass")
+    eval_sets.add_argument("--min-status", default="aug_judge_pass")
 
     tags = subparsers.add_parser("stress-tags")
     tags.add_argument("--metadata", required=True)

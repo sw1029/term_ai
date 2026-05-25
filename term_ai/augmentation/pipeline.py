@@ -259,7 +259,7 @@ def main() -> None:
     build_sft = subparsers.add_parser("build-sft")
     build_sft.add_argument("--metadata", required=True)
     build_sft.add_argument("--output", required=True)
-    build_sft.add_argument("--min-status", default="aug_human_pass")
+    build_sft.add_argument("--min-status", default="aug_judge_pass")
 
     args = parser.parse_args()
     if args.command == "prepare":

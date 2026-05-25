@@ -23,7 +23,10 @@ def test_context_cloze_accepts_basic_candidate():
         "task_type": TASK_CONTEXT_CLOZE,
         "word": "outstanding",
         "meaning_ko": "미결제",
-        "context": "The finance team reported three ___ payments before the annual audit review.",
+        "context": (
+            "The finance team reported three ___ payments before the annual audit review, "
+            "and the accounting manager asked staff to resolve them before sending the final report."
+        ),
         "options": ["outstanding", "additional", "optional", "preliminary"],
         "answer_idx": 0,
         "rationale": "감사 전에 해결해야 할 payments에는 outstanding이 가장 자연스럽습니다.",
@@ -31,6 +34,25 @@ def test_context_cloze_accepts_basic_candidate():
     }
     result = AutoFilter().validate_payload(payload)
     assert result.status == "aug_auto_pass"
+
+
+def test_context_cloze_rejects_low_margin_without_human_review():
+    payload = {
+        "task_type": TASK_CONTEXT_CLOZE,
+        "word": "outstanding",
+        "meaning_ko": "미결제",
+        "context": (
+            "The finance team reported three ___ payments before the annual audit review, "
+            "and the accounting manager asked staff to resolve them before sending the final report."
+        ),
+        "options": ["outstanding", "additional", "optional", "preliminary"],
+        "answer_idx": 0,
+        "rationale": "감사 전에 해결해야 할 payments에는 outstanding이 가장 자연스럽습니다.",
+        "teacher_scores": [0.45, 0.40, 0.10, 0.05],
+    }
+    result = AutoFilter().validate_payload(payload)
+    assert result.status == "rejected"
+    assert "low_teacher_score_margin" in result.warnings
 
 
 def test_synonym_rejects_target_word_and_blank_context():

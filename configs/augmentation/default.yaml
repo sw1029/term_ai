@@ -31,8 +31,8 @@ judge:
 
 validation:
   auto_filter:
-    min_context_words: 5
-    max_context_words: 100
+    min_context_words: 20
+    max_context_words: 80
     low_score_margin: 0.15
     high_similarity_threshold: 0.92
   judge_accept:
@@ -40,7 +40,8 @@ validation:
     distractor_validity_min: 1
     context_naturalness_min: 1
     leakage_check: pass
-  approved_min_status: aug_human_pass
+  human_spot_check_enabled: false
+  approved_min_status: aug_judge_pass
 
 outputs:
   anchors: data/processed/anchors_v1.jsonl
