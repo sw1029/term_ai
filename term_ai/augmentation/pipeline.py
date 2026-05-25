@@ -226,7 +226,7 @@ def main() -> None:
     generate.add_argument("--anchors", default="data/processed/anchors_v1.jsonl")
     generate.add_argument("--output", required=True)
     generate.add_argument("--task-type", required=True, choices=sorted(TASK_TYPES))
-    generate.add_argument("--model", default="gpt 5.4 mini")
+    generate.add_argument("--model", default="gpt-5.4-mini")
     generate.add_argument("--env", default=".env")
     generate.add_argument("--limit", type=int)
 

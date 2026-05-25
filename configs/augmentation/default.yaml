@@ -17,7 +17,7 @@ schema:
 
 teacher:
   provider: openai
-  model: "gpt 5.4 mini"
+  model: "gpt-5.4-mini"
   env_path: .env
   prompt_version: aug_prompt_v1
 
