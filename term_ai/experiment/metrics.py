@@ -109,6 +109,8 @@ def summarize_predictions(predictions: list[dict]) -> dict:
     correct = [int(truth == pred) for truth, pred in zip(y_true, y_pred)]
     confidence = [float(row.get("confidence", 1.0)) for row in predictions]
     latencies = [float(row["latency_ms"]) for row in predictions if "latency_ms" in row]
+    token_speeds = [float(row["tokens_per_sec"]) for row in predictions if "tokens_per_sec" in row]
+    peak_vram = [float(row["peak_vram_mb"]) for row in predictions if "peak_vram_mb" in row]
     parse_errors = sum(1 for row in predictions if row.get("parse_error"))
 
     ci_low, ci_high = bootstrap_accuracy_ci(y_true, y_pred, samples=500) if predictions else (0.0, 0.0)
@@ -135,5 +137,9 @@ def summarize_predictions(predictions: list[dict]) -> dict:
         "task_accuracy": task_accuracy,
         "parse_error_rate": parse_errors / len(predictions) if predictions else 0.0,
     }
+    if token_speeds:
+        summary["tokens_per_sec"] = mean(token_speeds)
+    if peak_vram:
+        summary["peak_VRAM_or_RAM"] = max(peak_vram)
     summary.update(latency_summary(latencies))
     return summary

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import argparse
 import json
 from pathlib import Path
+import shutil
 from typing import Any
 
 
@@ -22,6 +24,7 @@ class LoRATrainingConfig:
     lora_dropout: float = 0.05
     resume_from_checkpoint: str | None = None
     backup_weights: bool = True
+    early_stopping_patience: int | None = 2
 
 
 def _read_messages_jsonl(path: str | Path) -> list[dict[str, Any]]:
@@ -58,6 +61,7 @@ def train_lora_sft(config: LoRATrainingConfig) -> Path:
             AutoModelForCausalLM,
             AutoTokenizer,
             DataCollatorForLanguageModeling,
+            EarlyStoppingCallback,
             Trainer,
             TrainingArguments,
         )
@@ -111,6 +115,10 @@ def train_lora_sft(config: LoRATrainingConfig) -> Path:
         report_to=[],
     )
 
+    callbacks = []
+    if config.early_stopping_patience is not None:
+        callbacks.append(EarlyStoppingCallback(early_stopping_patience=config.early_stopping_patience))
+
     trainer = Trainer(
         model=model,
         args=training_args,
@@ -118,10 +126,18 @@ def train_lora_sft(config: LoRATrainingConfig) -> Path:
         eval_dataset=dev_dataset,
         tokenizer=tokenizer,
         data_collator=DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False),
+        callbacks=callbacks,
     )
     trainer.train(resume_from_checkpoint=config.resume_from_checkpoint)
     trainer.save_model(str(output_dir / "final_adapter"))
     tokenizer.save_pretrained(str(output_dir / "final_adapter"))
+    if config.backup_weights:
+        backup_dir = output_dir / "backups"
+        backup_dir.mkdir(exist_ok=True)
+        backup_path = backup_dir / "final_adapter_backup"
+        if backup_path.exists():
+            shutil.rmtree(backup_path)
+        shutil.copytree(output_dir / "final_adapter", backup_path)
 
     resume_state = {
         "stage": "trained",
@@ -131,3 +147,47 @@ def train_lora_sft(config: LoRATrainingConfig) -> Path:
     }
     (output_dir / "resume_state.json").write_text(json.dumps(resume_state, ensure_ascii=False, indent=2), encoding="utf-8")
     return output_dir / "final_adapter"
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Run LoRA SFT training.")
+    parser.add_argument("--model-name-or-path", required=True)
+    parser.add_argument("--train-jsonl", required=True)
+    parser.add_argument("--dev-jsonl", required=True)
+    parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--max-length", type=int, default=1024)
+    parser.add_argument("--learning-rate", type=float, default=2e-4)
+    parser.add_argument("--epochs", type=int, default=3)
+    parser.add_argument("--batch-size", type=int, default=1)
+    parser.add_argument("--gradient-accumulation-steps", type=int, default=8)
+    parser.add_argument("--lora-r", type=int, default=8)
+    parser.add_argument("--lora-alpha", type=int, default=16)
+    parser.add_argument("--lora-dropout", type=float, default=0.05)
+    parser.add_argument("--resume-from-checkpoint")
+    parser.add_argument("--early-stopping-patience", type=int, default=2)
+    parser.add_argument("--no-weight-backup", action="store_true")
+    args = parser.parse_args()
+    adapter = train_lora_sft(
+        LoRATrainingConfig(
+            model_name_or_path=args.model_name_or_path,
+            train_jsonl=args.train_jsonl,
+            dev_jsonl=args.dev_jsonl,
+            output_dir=args.output_dir,
+            max_length=args.max_length,
+            learning_rate=args.learning_rate,
+            epochs=args.epochs,
+            batch_size=args.batch_size,
+            gradient_accumulation_steps=args.gradient_accumulation_steps,
+            lora_r=args.lora_r,
+            lora_alpha=args.lora_alpha,
+            lora_dropout=args.lora_dropout,
+            resume_from_checkpoint=args.resume_from_checkpoint,
+            backup_weights=not args.no_weight_backup,
+            early_stopping_patience=args.early_stopping_patience,
+        )
+    )
+    print(json.dumps({"final_adapter": str(adapter)}, ensure_ascii=False, indent=2))
+
+
+if __name__ == "__main__":
+    main()
