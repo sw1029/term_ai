@@ -25,6 +25,56 @@ def _reranker_training_examples(items: list[MCQItem]) -> list[Any]:
     return examples
 
 
+def _normalize_scores(scores: np.ndarray, method: str) -> np.ndarray:
+    if method == "raw":
+        return scores.astype(float)
+    if method == "sigmoid":
+        return 1.0 / (1.0 + np.exp(-scores.astype(float)))
+    if method == "minmax":
+        minimum = float(scores.min())
+        maximum = float(scores.max())
+        if maximum == minimum:
+            return np.ones_like(scores, dtype=float)
+        return (scores.astype(float) - minimum) / (maximum - minimum)
+    raise ValueError("score_normalization must be raw, sigmoid, or minmax")
+
+
+def _score_items(model: Any, items: list[MCQItem], score_normalization: str) -> list[tuple[MCQItem, np.ndarray, np.ndarray]]:
+    scored: list[tuple[MCQItem, np.ndarray, np.ndarray]] = []
+    for item in items:
+        pairs = [(item.query_text(), option) for option in item.options]
+        raw_scores = np.asarray(model.predict(pairs), dtype=float)
+        normalized_scores = _normalize_scores(raw_scores, score_normalization)
+        scored.append((item, raw_scores, normalized_scores))
+    return scored
+
+
+def tune_reranker_threshold(
+    model: Any,
+    items: list[MCQItem],
+    score_normalization: str = "sigmoid",
+) -> dict[str, Any]:
+    if not items:
+        raise ValueError("no dev items available for reranker threshold tuning")
+    scored = _score_items(model, items, score_normalization)
+    candidates = sorted({float(scores.max()) for _, _, scores in scored} | {0.0, 1.0})
+    best = {"threshold": candidates[0], "accuracy": -1.0, "coverage": 0.0}
+    for threshold in candidates:
+        correct = 0
+        covered = 0
+        for item, _, scores in scored:
+            idx = int(np.argmax(scores))
+            if float(scores[idx]) >= threshold:
+                covered += 1
+                correct += int(answer_label(idx) == item.label)
+        accuracy = correct / len(scored)
+        coverage = covered / len(scored)
+        if (accuracy, coverage, -threshold) > (best["accuracy"], best["coverage"], -best["threshold"]):
+            best = {"threshold": threshold, "accuracy": accuracy, "coverage": coverage}
+    best["score_normalization"] = score_normalization
+    return best
+
+
 def run_reranker(
     metadata_path: str | Path,
     output_dir: str | Path,
@@ -35,6 +85,9 @@ def run_reranker(
     fine_tune: bool = False,
     epochs: int = 1,
     batch_size: int = 8,
+    score_normalization: str = "sigmoid",
+    threshold: float | None = None,
+    threshold_split: str = "dev",
     final_test_once: bool = True,
     test_lock_dir: str | Path | None = None,
 ) -> dict[str, Any]:
@@ -62,24 +115,44 @@ def run_reranker(
         train_loader = DataLoader(_reranker_training_examples(train_items), shuffle=True, batch_size=batch_size)
         model.fit(train_dataloader=train_loader, epochs=epochs, output_path=str(output / "reranker_finetuned"))
         model = CrossEncoder(str(output / "reranker_finetuned"))
+    tuning: dict[str, Any] | None = None
+    if threshold is None:
+        threshold_items = [item for item in all_items if item.split == threshold_split]
+        tuning = tune_reranker_threshold(model, threshold_items, score_normalization=score_normalization)
+        threshold = float(tuning["threshold"])
     predictions = []
     for item in items:
         pairs = [(item.query_text(), option) for option in item.options]
         with timed() as state:
-            scores = np.asarray(model.predict(pairs))
+            raw_scores = np.asarray(model.predict(pairs), dtype=float)
+            scores = _normalize_scores(raw_scores, score_normalization)
         idx = int(np.argmax(scores))
+        confidence = float(scores[idx])
+        prediction = answer_label(idx) if threshold is None or confidence >= threshold else "ABSTAIN"
         predictions.append(
             prediction_row(
                 item,
-                answer_label(idx),
-                float(scores[idx]),
+                prediction,
+                confidence,
                 latency_ms=state["latency_ms"],
-                extra={"reranker_score": float(scores[idx]), **memory_snapshot()},
+                extra={
+                    "reranker_score": float(raw_scores[idx]),
+                    "reranker_normalized_score": confidence,
+                    "score_normalization": score_normalization,
+                    "threshold": threshold,
+                    "abstained": prediction == "ABSTAIN",
+                    **memory_snapshot(),
+                },
             )
         )
 
     metrics = summarize_predictions(predictions)
     metrics["fine_tuned"] = fine_tune
+    metrics["score_normalization"] = score_normalization
+    metrics["threshold"] = threshold
+    if tuning is not None:
+        metrics["threshold_tuning"] = tuning
+        (output / "reranker_threshold.json").write_text(json.dumps(tuning, ensure_ascii=False, indent=2), encoding="utf-8")
     write_jsonl(output / "prediction_log.jsonl", predictions)
     (output / "metric_log.json").write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
     return metrics
@@ -96,6 +169,9 @@ def main() -> None:
     parser.add_argument("--fine-tune", action="store_true")
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--batch-size", type=int, default=8)
+    parser.add_argument("--score-normalization", choices=["raw", "sigmoid", "minmax"], default="sigmoid")
+    parser.add_argument("--threshold", type=float)
+    parser.add_argument("--threshold-split", default="dev")
     parser.add_argument("--test-lock-dir")
     parser.add_argument("--allow-repeat-test", action="store_true")
     args = parser.parse_args()
@@ -109,6 +185,9 @@ def main() -> None:
         fine_tune=args.fine_tune,
         epochs=args.epochs,
         batch_size=args.batch_size,
+        score_normalization=args.score_normalization,
+        threshold=args.threshold,
+        threshold_split=args.threshold_split,
         final_test_once=not args.allow_repeat_test,
         test_lock_dir=args.test_lock_dir,
     )

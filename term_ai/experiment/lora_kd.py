@@ -31,6 +31,7 @@ class LoRAKDConfig:
     hard_label_only: bool = False
     include_rationale: bool = True
     require_teacher_scores: bool = True
+    response_format: str = "json_distribution"
     resume_from_checkpoint: str | None = None
 
 
@@ -51,7 +52,10 @@ def metadata_to_kd_rows(
     min_status: str = "aug_judge_pass",
     include_rationale: bool = True,
     require_teacher_scores: bool = True,
+    response_format: str = "json_distribution",
 ) -> list[dict[str, Any]]:
+    if response_format not in {"json_distribution", "letter_reason"}:
+        raise ValueError("response_format must be json_distribution or letter_reason")
     rows: list[dict[str, Any]] = []
     for row in iter_jsonl(metadata_path):
         status = str(row.get("status") or "")
@@ -64,15 +68,26 @@ def metadata_to_kd_rows(
         answer_idx = payload.get("answer_idx")
         if not isinstance(answer_idx, int):
             continue
+        scores = _soft_scores(row, answer_idx, require_teacher_scores=require_teacher_scores)
         if not include_rationale:
             payload["rationale"] = f"정답은 {answer_label(answer_idx)}입니다."
         sft = candidate_payload_to_sft_record(payload)
+        if response_format == "json_distribution":
+            label = answer_label(answer_idx)
+            assistant: dict[str, Any] = {
+                "answer": label,
+                "confidence": scores[answer_idx],
+                "distribution": {answer_label(idx): scores[idx] for idx in range(4)},
+            }
+            if include_rationale:
+                assistant["rationale"] = str(payload.get("rationale") or payload.get("teacher_rationale") or "").strip()
+            sft["messages"][2]["content"] = json.dumps(assistant, ensure_ascii=False, sort_keys=True)
         rows.append(
             {
                 "item_id": row.get("item_id"),
                 "messages": sft["messages"],
                 "answer_idx": answer_idx,
-                "teacher_scores": _soft_scores(row, answer_idx, require_teacher_scores=require_teacher_scores),
+                "teacher_scores": scores,
             }
         )
     return rows
@@ -95,12 +110,14 @@ def train_lora_sft_kd(config: LoRAKDConfig) -> Path:
         min_status=config.min_status,
         include_rationale=config.include_rationale,
         require_teacher_scores=config.require_teacher_scores and not config.hard_label_only,
+        response_format=config.response_format,
     )
     dev_rows = metadata_to_kd_rows(
         config.dev_metadata_jsonl,
         min_status=config.dev_min_status,
         include_rationale=config.include_rationale,
         require_teacher_scores=config.require_teacher_scores and not config.hard_label_only,
+        response_format=config.response_format,
     )
     if not train_rows:
         raise ValueError("no training rows for LoRA KD")
@@ -241,6 +258,7 @@ def main() -> None:
     parser.set_defaults(include_rationale=True)
     parser.add_argument("--allow-missing-teacher-scores", dest="require_teacher_scores", action="store_false")
     parser.set_defaults(require_teacher_scores=True)
+    parser.add_argument("--response-format", choices=["json_distribution", "letter_reason"], default="json_distribution")
     parser.add_argument("--resume-from-checkpoint")
     args = parser.parse_args()
     adapter = train_lora_sft_kd(LoRAKDConfig(**vars(args)))

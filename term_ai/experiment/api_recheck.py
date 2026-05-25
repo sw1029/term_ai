@@ -49,6 +49,28 @@ def _usage_value(usage: Any, name: str) -> int:
     return int(getattr(usage, name, 0) or 0)
 
 
+def _load_pricing(
+    pricing_path: str | Path | None,
+    provider: str,
+    model: str,
+) -> tuple[float, float, str]:
+    if pricing_path is None:
+        return 0.0, 0.0, "not_configured"
+    path = Path(pricing_path)
+    if not path.exists():
+        raise FileNotFoundError(f"pricing file not found: {path}")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for key in (f"{provider}/{model}", model, provider, "default"):
+        value = data.get(key)
+        if isinstance(value, dict):
+            return (
+                float(value.get("input_cost_per_1m_tokens", 0.0)),
+                float(value.get("output_cost_per_1m_tokens", 0.0)),
+                f"pricing_file:{key}",
+            )
+    return 0.0, 0.0, "pricing_file_no_match"
+
+
 class LLMRecheckClient:
     """OpenAI SDK based recheck client, including OpenAI-compatible Qwen endpoints."""
 
@@ -149,6 +171,7 @@ def run_api_recheck(
     cost_per_1000_questions: float = 0.0,
     input_cost_per_1m_tokens: float = 0.0,
     output_cost_per_1m_tokens: float = 0.0,
+    pricing_path: str | Path | None = None,
     primary_predictions_path: str | Path | None = None,
     confidence_threshold: float = 0.7,
     fallback_only: bool = True,
@@ -181,6 +204,11 @@ def run_api_recheck(
         base_url=base_url,
         api_key_env=api_key_env,
     )
+    pricing_input, pricing_output, pricing_source = _load_pricing(pricing_path, provider, client.model)
+    if input_cost_per_1m_tokens == 0.0:
+        input_cost_per_1m_tokens = pricing_input
+    if output_cost_per_1m_tokens == 0.0:
+        output_cost_per_1m_tokens = pricing_output
     min_interval = 1.0 / requests_per_second
     last_request_at: float | None = None
     predictions: list[dict[str, Any]] = []
@@ -195,10 +223,12 @@ def run_api_recheck(
             last_request_at = time.monotonic()
             result = client.generate_json_with_usage(item.prompt())
         answer, confidence = parse_answer_letter(json.dumps(result.payload, ensure_ascii=False))
-        estimated_cost = (
+        usage_cost = (
             result.prompt_tokens / 1_000_000 * input_cost_per_1m_tokens
             + result.completion_tokens / 1_000_000 * output_cost_per_1m_tokens
         )
+        manual_cost = cost_per_1000_questions / 1000 if cost_per_1000_questions and not usage_cost else 0.0
+        estimated_cost = usage_cost + manual_cost
         total_cost += estimated_cost
         predictions.append(
             prediction_row(
@@ -215,6 +245,7 @@ def run_api_recheck(
                     "completion_tokens": result.completion_tokens,
                     "total_tokens": result.total_tokens,
                     "estimated_cost_usd": estimated_cost,
+                    "cost_source": "token_usage" if usage_cost else "manual_per_question" if manual_cost else pricing_source,
                     "fallback_reason": "api_recheck",
                     "primary_confidence": (primary_predictions.get(item.item_id) or {}).get("confidence"),
                     **memory_snapshot(),
@@ -232,6 +263,7 @@ def run_api_recheck(
     metrics["model"] = client.model
     metrics["fallback_only"] = fallback_only
     metrics["fallback_rate"] = len(predictions) / len(all_items) if all_items else 0.0
+    metrics["pricing_source"] = pricing_source
     write_jsonl(output / "prediction_log.jsonl", predictions)
     (output / "metric_log.json").write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
     return metrics
@@ -253,6 +285,7 @@ def main() -> None:
     parser.add_argument("--cost-per-1000-questions", type=float, default=0.0)
     parser.add_argument("--input-cost-per-1m-tokens", type=float, default=0.0)
     parser.add_argument("--output-cost-per-1m-tokens", type=float, default=0.0)
+    parser.add_argument("--pricing-path")
     parser.add_argument("--primary-predictions")
     parser.add_argument("--confidence-threshold", type=float, default=0.7)
     parser.add_argument("--test-lock-dir")
@@ -274,6 +307,7 @@ def main() -> None:
         cost_per_1000_questions=args.cost_per_1000_questions,
         input_cost_per_1m_tokens=args.input_cost_per_1m_tokens,
         output_cost_per_1m_tokens=args.output_cost_per_1m_tokens,
+        pricing_path=args.pricing_path,
         primary_predictions_path=args.primary_predictions,
         confidence_threshold=args.confidence_threshold,
         fallback_only=not args.all_items,

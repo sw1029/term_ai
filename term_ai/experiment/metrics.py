@@ -192,6 +192,12 @@ def summarize_predictions(predictions: list[dict]) -> dict:
     peak_vram = [float(row["peak_vram_mb"]) for row in predictions if "peak_vram_mb" in row]
     ram_values = [float(row["ram_mb"]) for row in predictions if "ram_mb" in row]
     estimated_costs = [float(row["estimated_cost_usd"]) for row in predictions if "estimated_cost_usd" in row]
+    local_costs = [
+        float(row["latency_ms"]) / 3_600_000 * float(row["local_cost_per_hour_usd"])
+        for row in predictions
+        if "latency_ms" in row and "local_cost_per_hour_usd" in row
+    ]
+    cold_start_ms = [float(row["cold_start_ms"]) for row in predictions if "cold_start_ms" in row]
     parse_errors = sum(1 for row in predictions if row.get("parse_error"))
 
     ci_low, ci_high = bootstrap_accuracy_ci(y_true, y_pred, samples=500) if predictions else (0.0, 0.0)
@@ -217,18 +223,29 @@ def summarize_predictions(predictions: list[dict]) -> dict:
         "task_counts": dict(task_counts),
         "task_accuracy": task_accuracy,
         "parse_error_rate": parse_errors / len(predictions) if predictions else 0.0,
+        "tokens_per_sec": mean(token_speeds) if token_speeds else 0.0,
+        "cost_per_1000_questions": 0.0,
+        "peak_VRAM_or_RAM": 0.0,
+        "peak_ram_mb": max(ram_values) if ram_values else 0.0,
+        "cold_start_ms": max(cold_start_ms) if cold_start_ms else 0.0,
+        "ops_metric_coverage": {
+            "latency_ms": len(latencies),
+            "tokens_per_sec": len(token_speeds),
+            "peak_vram_mb": len(peak_vram),
+            "ram_mb": len(ram_values),
+            "estimated_cost_usd": len(estimated_costs),
+            "local_cost_per_hour_usd": len(local_costs),
+            "cold_start_ms": len(cold_start_ms),
+        },
     }
-    if token_speeds:
-        summary["tokens_per_sec"] = mean(token_speeds)
-    if estimated_costs:
-        total_cost = sum(estimated_costs)
+    combined_costs = estimated_costs + local_costs
+    if combined_costs:
+        total_cost = sum(combined_costs)
         summary["total_estimated_cost_usd"] = total_cost
         summary["cost_per_1000_questions"] = total_cost / len(predictions) * 1000 if predictions else 0.0
     if peak_vram:
         summary["peak_VRAM_or_RAM"] = max(peak_vram)
     elif ram_values:
         summary["peak_VRAM_or_RAM"] = max(ram_values)
-    if ram_values:
-        summary["peak_ram_mb"] = max(ram_values)
     summary.update(latency_summary(latencies))
     return summary
