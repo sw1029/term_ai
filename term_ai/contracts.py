@@ -34,13 +34,19 @@ TASK_RATIOS = {
 SPLIT_RATIOS = {"train": 0.70, "dev": 0.15, "test": 0.15}
 
 RAW_GT_STATUS = "raw_gt"
-APPROVED_AUG_STATUS = "aug_human_pass"
+JUDGE_VALIDATED_AUG_STATUS = "aug_judge_pass"
+HUMAN_APPROVED_AUG_STATUS = "aug_human_pass"
+# Keep "approved" reserved for the document-level human-approved meaning.
+APPROVED_AUG_STATUS = HUMAN_APPROVED_AUG_STATUS
+# Human spot check is intentionally disabled for this project run, so generated
+# training data must use the stricter judge-validated name instead of approved.
+DEFAULT_TRAINABLE_AUG_STATUS = JUDGE_VALIDATED_AUG_STATUS
 
 STATUS_ORDER = [
     "aug_candidate",
     "aug_auto_pass",
-    "aug_judge_pass",
-    APPROVED_AUG_STATUS,
+    JUDGE_VALIDATED_AUG_STATUS,
+    HUMAN_APPROVED_AUG_STATUS,
 ]
 VALID_STATUSES = set(STATUS_ORDER + [RAW_GT_STATUS, "rejected"])
 

@@ -41,12 +41,14 @@ validation:
     context_naturalness_min: 1
     leakage_check: pass
   human_spot_check_enabled: false
-  approved_min_status: aug_judge_pass
+  trainable_min_status: aug_judge_pass
+  approved_min_status: aug_human_pass
 
 outputs:
   anchors: data/processed/anchors_v1.jsonl
   split_manifest: data/splits/word_split_seed42.json
   candidates_dir: data/aug
-  approved_sft: data/sft/approved_sft_v1.jsonl
+  judge_validated_sft: data/sft/judge_validated_train_sft_v1.jsonl
+  human_approved_sft: data/sft/approved_train_sft_v1.jsonl
   metadata_dir: data/metadata
   version_manifest: data/manifests/version_manifest.json
