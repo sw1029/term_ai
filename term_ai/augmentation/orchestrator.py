@@ -13,14 +13,16 @@ from term_ai.augmentation.teacher import OpenAITeacherClient
 from term_ai.contracts import AugmentationMetadata, TASK_RATIOS, TASK_TYPES, dumps_jsonl, stable_id
 
 
-def _load_train_anchors(anchors_path: Path) -> list[dict[str, Any]]:
+def _load_split_anchors(anchors_path: Path, split: str) -> list[dict[str, Any]]:
+    if split not in {"train", "dev", "test"}:
+        raise ValueError("split must be train, dev, or test")
     anchors: list[dict[str, Any]] = []
     with anchors_path.open("r", encoding="utf-8") as handle:
         for line in handle:
             if not line.strip():
                 continue
             anchor = json.loads(line)
-            if anchor.get("split") == "train" and not anchor.get("duplicate_of"):
+            if anchor.get("split") == split and not anchor.get("duplicate_of"):
                 anchors.append(anchor)
     return anchors
 
@@ -34,7 +36,7 @@ def _task_counts(total: int, ratios: dict[str, float]) -> dict[str, int]:
     return counts
 
 
-def generate_train_batch(
+def generate_split_batch(
     anchors_path: str | Path,
     output_path: str | Path,
     total: int,
@@ -42,20 +44,24 @@ def generate_train_batch(
     env_path: str | Path = ".env",
     requests_per_second: float = 1.0,
     ratios: dict[str, float] | None = None,
+    split: str = "train",
+    teacher_client: Any | None = None,
 ) -> dict[str, Any]:
     if requests_per_second <= 0:
         raise ValueError("requests_per_second must be positive")
+    if total < 0:
+        raise ValueError("total must be non-negative")
     ratios = ratios or TASK_RATIOS
     invalid_tasks = set(ratios) - TASK_TYPES
     if invalid_tasks:
         raise ValueError(f"invalid task ratios: {sorted(invalid_tasks)}")
 
-    anchors = _load_train_anchors(Path(anchors_path))
+    anchors = _load_split_anchors(Path(anchors_path), split)
     if not anchors:
-        raise ValueError("no train anchors available")
+        raise ValueError(f"no {split} anchors available")
 
     counts = _task_counts(total, ratios)
-    teacher = OpenAITeacherClient(model=model, env_path=str(env_path))
+    teacher = teacher_client or OpenAITeacherClient(model=model, env_path=str(env_path))
     min_interval = 1.0 / requests_per_second
     last_request_at: float | None = None
     written_by_task: dict[str, int] = defaultdict(int)
@@ -80,7 +86,7 @@ def generate_train_batch(
                     item_id=item_id,
                     anchor_id=anchor["anchor_id"],
                     word_id=anchor["word_id"],
-                    split="train",
+                    split=split,
                     status="aug_candidate",
                     prompt_version=PROMPT_VERSION,
                     generator_model=model,
@@ -97,7 +103,7 @@ def generate_train_batch(
         "total_requested": total,
         "total_written": sum(written_by_task.values()),
         "task_counts": dict(written_by_task),
-        "source_split": "train",
+        "source_split": split,
         "requests_per_second": requests_per_second,
         "model": model,
     }
@@ -106,22 +112,48 @@ def generate_train_batch(
     return manifest
 
 
+def generate_train_batch(
+    anchors_path: str | Path,
+    output_path: str | Path,
+    total: int,
+    model: str = "gpt-5.4-mini",
+    env_path: str | Path = ".env",
+    requests_per_second: float = 1.0,
+    ratios: dict[str, float] | None = None,
+    teacher_client: Any | None = None,
+) -> dict[str, Any]:
+    return generate_split_batch(
+        anchors_path=anchors_path,
+        output_path=output_path,
+        total=total,
+        model=model,
+        env_path=env_path,
+        requests_per_second=requests_per_second,
+        ratios=ratios,
+        split="train",
+        teacher_client=teacher_client,
+    )
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Train-only augmentation orchestration.")
+    parser = argparse.ArgumentParser(description="Split-aware augmentation orchestration.")
     parser.add_argument("--anchors", default="data/processed/anchors_v1.jsonl")
-    parser.add_argument("--output", default="data/aug/train_aug_candidate_v1.jsonl")
+    parser.add_argument("--output")
     parser.add_argument("--total", type=int, required=True)
     parser.add_argument("--model", default="gpt-5.4-mini")
     parser.add_argument("--env", default=".env")
     parser.add_argument("--requests-per-second", type=float, default=1.0)
+    parser.add_argument("--split", choices=["train", "dev", "test"], default="train")
     args = parser.parse_args()
-    manifest = generate_train_batch(
+    output = args.output or f"data/aug/{args.split}_aug_candidate_v1.jsonl"
+    manifest = generate_split_batch(
         anchors_path=args.anchors,
-        output_path=args.output,
+        output_path=output,
         total=args.total,
         model=args.model,
         env_path=args.env,
         requests_per_second=args.requests_per_second,
+        split=args.split,
     )
     print(json.dumps(manifest, ensure_ascii=False, indent=2))
 
