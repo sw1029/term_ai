@@ -7,7 +7,7 @@ import time
 from typing import Any
 
 from term_ai.augmentation.teacher import OpenAITeacherClient
-from term_ai.contracts import dumps_jsonl
+from term_ai.contracts import dumps_jsonl, normalize_openai_model_id
 
 
 def build_judge_prompt(payload: dict[str, Any]) -> str:
@@ -37,9 +37,15 @@ def judge_metadata(
     env_path: str | Path = ".env",
     requests_per_second: float = 1.0,
     limit: int | None = None,
+    generator_model: str | None = None,
+    enforce_model_separation: bool = True,
 ) -> dict[str, int]:
     if requests_per_second <= 0:
         raise ValueError("requests_per_second must be positive")
+    model = normalize_openai_model_id(model)
+    generator_model = normalize_openai_model_id(generator_model) if generator_model else None
+    if enforce_model_separation and generator_model and model == generator_model:
+        raise ValueError("judge model must differ from generator model")
     teacher = OpenAITeacherClient(model=model, env_path=str(env_path))
     min_interval = 1.0 / requests_per_second
     last_request_at: float | None = None
@@ -54,6 +60,9 @@ def judge_metadata(
             if limit is not None and counts["written"] >= limit:
                 break
             row = json.loads(line)
+            row_generator = normalize_openai_model_id(str(row.get("generator_model") or generator_model or ""))
+            if enforce_model_separation and row_generator and row_generator == model:
+                raise ValueError(f"judge model must differ from generator model for item {row.get('item_id')}")
             if last_request_at is not None:
                 elapsed = time.monotonic() - last_request_at
                 if elapsed < min_interval:
@@ -77,6 +86,8 @@ def main() -> None:
     parser.add_argument("--env", default=".env")
     parser.add_argument("--requests-per-second", type=float, default=1.0)
     parser.add_argument("--limit", type=int)
+    parser.add_argument("--generator-model")
+    parser.add_argument("--allow-same-model", action="store_true")
     args = parser.parse_args()
     counts = judge_metadata(
         metadata_path=args.metadata,
@@ -85,6 +96,8 @@ def main() -> None:
         env_path=args.env,
         requests_per_second=args.requests_per_second,
         limit=args.limit,
+        generator_model=args.generator_model,
+        enforce_model_separation=not args.allow_same_model,
     )
     print(json.dumps(counts, ensure_ascii=False, indent=2))
 

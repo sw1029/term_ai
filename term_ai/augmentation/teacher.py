@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from typing import Protocol
 
+from term_ai.contracts import normalize_openai_model_id
 from term_ai.env import resolve_openai_api_key
 
 
@@ -13,7 +14,7 @@ class TeacherClient(Protocol):
 
 class OpenAITeacherClient:
     def __init__(self, model: str, api_key: str | None = None, env_path: str = ".env") -> None:
-        self.model = model
+        self.model = normalize_openai_model_id(model)
         self.api_key = api_key or resolve_openai_api_key(env_path)
         if not self.api_key:
             raise RuntimeError("OpenAI API key was not found in OPENAI_API_KEY or api-key")

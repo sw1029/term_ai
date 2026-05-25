@@ -1,6 +1,15 @@
 import pytest
 
-from term_ai.contracts import ContractError, SYSTEM_PROMPT, make_sft_record, validate_sft_record
+from term_ai.contracts import (
+    APPROVED_AUG_STATUS,
+    ContractError,
+    RAW_GT_STATUS,
+    SYSTEM_PROMPT,
+    make_sft_record,
+    normalize_openai_model_id,
+    status_reaches,
+    validate_sft_record,
+)
 from term_ai.augmentation.sft_builder import candidate_payload_to_sft_record
 
 
@@ -31,3 +40,12 @@ def test_candidate_sft_conversion_keeps_metadata_out():
     )
     assert set(record.keys()) == {"messages"}
     validate_sft_record(record)
+
+
+def test_raw_gt_status_is_not_approved_augmentation():
+    assert status_reaches(RAW_GT_STATUS, RAW_GT_STATUS)
+    assert not status_reaches(RAW_GT_STATUS, APPROVED_AUG_STATUS)
+
+
+def test_openai_model_id_normalization_keeps_doc_alias_usable():
+    assert normalize_openai_model_id("gpt 5.4 mini") == "gpt-5.4-mini"

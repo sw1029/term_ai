@@ -17,9 +17,16 @@ schema:
 
 teacher:
   provider: openai
+  requested_model_name: "gpt 5.4 mini"
   model: "gpt-5.4-mini"
   env_path: .env
   prompt_version: aug_prompt_v1
+  requests_per_second: 1.0
+
+judge:
+  provider: openai
+  model: null
+  enforce_model_separation: true
   requests_per_second: 1.0
 
 validation:

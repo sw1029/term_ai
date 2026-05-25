@@ -15,6 +15,7 @@ TASK_SYNONYM = "Synonym Selection"
 TASK_ANTONYM = "Antonym Selection"
 TASK_CONTEXT_CLOZE = "Context Cloze"
 TASK_SENSE_DISAMBIGUATION = "Sense Disambiguation"
+TASK_RAW_MEANING_SELECTION = "Raw Meaning Selection"
 
 TASK_TYPES = {
     TASK_SYNONYM,
@@ -32,13 +33,16 @@ TASK_RATIOS = {
 
 SPLIT_RATIOS = {"train": 0.70, "dev": 0.15, "test": 0.15}
 
+RAW_GT_STATUS = "raw_gt"
+APPROVED_AUG_STATUS = "aug_human_pass"
+
 STATUS_ORDER = [
     "aug_candidate",
     "aug_auto_pass",
     "aug_judge_pass",
-    "aug_human_pass",
+    APPROVED_AUG_STATUS,
 ]
-VALID_STATUSES = set(STATUS_ORDER + ["rejected"])
+VALID_STATUSES = set(STATUS_ORDER + [RAW_GT_STATUS, "rejected"])
 
 
 class ContractError(ValueError):
@@ -62,6 +66,19 @@ def normalize_space(value: str) -> str:
 
 def normalize_key(value: str) -> str:
     return normalize_space(value).casefold()
+
+
+def normalize_openai_model_id(model: str) -> str:
+    """Normalize the project document spelling to the API model id.
+
+    The planning docs use the human-readable spelling "gpt 5.4 mini"; the
+    OpenAI API expects the dash-delimited model id.
+    """
+
+    normalized = normalize_key(model).replace("_", " ")
+    if normalized == "gpt 5.4 mini":
+        return "gpt-5.4-mini"
+    return model.strip()
 
 
 @dataclass(frozen=True)
@@ -161,10 +178,16 @@ def ensure_task_type(task_type: str) -> str:
 
 
 def status_reaches(status: str, minimum: str) -> bool:
+    if minimum == "any":
+        return status != "rejected"
     if status == "rejected":
         return False
     if status not in VALID_STATUSES:
         raise ContractError(f"unknown status: {status!r}")
+    if minimum == RAW_GT_STATUS:
+        return status == RAW_GT_STATUS
+    if status == RAW_GT_STATUS:
+        return False
     if minimum not in STATUS_ORDER:
         raise ContractError(f"unknown minimum status: {minimum!r}")
     return STATUS_ORDER.index(status) >= STATUS_ORDER.index(minimum)
