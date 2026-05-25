@@ -213,9 +213,15 @@ def test_kd_ablation_sweep_writes_hard_soft_rationale_matrix(tmp_path: Path):
     )
 
     ablations = {row["ablation"]: row for row in manifest["runs"]}
-    assert set(ablations) == {"hard_only_with_rationale", "soft_kd_with_rationale", "soft_kd_no_rationale"}
+    assert set(ablations) == {
+        "hard_only_with_rationale",
+        "soft_kd_with_rationale",
+        "soft_kd_no_rationale",
+        "classification_head_kd",
+    }
     assert ablations["hard_only_with_rationale"]["hard_label_only"] is True
     assert ablations["soft_kd_no_rationale"]["include_rationale"] is False
+    assert ablations["classification_head_kd"]["response_format"] == "option_classification_logits"
 
 
 def test_g4_adapter_validation_requires_g3_manifest(tmp_path: Path):

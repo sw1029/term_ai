@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from term_ai.experiment.classification_head_kd import OptionClassificationHeadConfig, train_option_classification_head_kd
 from term_ai.experiment.lora_kd import LoRAKDConfig, train_lora_sft_kd
 from term_ai.experiment.lm_eval import run_hf_zero_shot
 
@@ -28,6 +29,7 @@ class KDAblationSweepConfig:
     lora_dropout: float = 0.05
     eval_metadata: str | None = None
     eval_split: str = "dev"
+    include_classification_head: bool = True
 
 
 def _ablation_configs(config: KDAblationSweepConfig) -> dict[str, LoRAKDConfig]:
@@ -106,6 +108,34 @@ def run_kd_ablation_sweep(config: KDAblationSweepConfig) -> dict[str, Any]:
                 row["post_train_eval"] = metrics
         runs.append(row)
 
+    if config.include_classification_head:
+        head_output = output / "classification_head_kd"
+        row = {
+            "ablation": "classification_head_kd",
+            "status": "planned",
+            "output_dir": str(head_output),
+            "hard_label_only": False,
+            "include_rationale": False,
+            "lambda_soft": config.lambda_soft,
+            "response_format": "option_classification_logits",
+        }
+        if config.execute_training:
+            metrics = train_option_classification_head_kd(
+                OptionClassificationHeadConfig(
+                    model_name_or_path=config.model_name_or_path,
+                    metadata_jsonl=config.metadata_jsonl,
+                    dev_metadata_jsonl=config.dev_metadata_jsonl,
+                    output_dir=str(head_output),
+                    min_status=config.min_status,
+                    dev_min_status=config.dev_min_status,
+                    epochs=config.epochs,
+                    lambda_soft=config.lambda_soft,
+                )
+            )
+            row["status"] = "trained"
+            row["post_train_eval"] = metrics
+        runs.append(row)
+
     manifest = {
         "task": "g3_lora_kd_ablation_sweep",
         "metadata_jsonl": config.metadata_jsonl,
@@ -137,6 +167,8 @@ def main() -> None:
     parser.add_argument("--lora-dropout", type=float, default=0.05)
     parser.add_argument("--eval-metadata")
     parser.add_argument("--eval-split", default="dev")
+    parser.add_argument("--skip-classification-head", dest="include_classification_head", action="store_false")
+    parser.set_defaults(include_classification_head=True)
     args = parser.parse_args()
     result = run_kd_ablation_sweep(KDAblationSweepConfig(**vars(args)))
     print(json.dumps(result, ensure_ascii=False, indent=2))
