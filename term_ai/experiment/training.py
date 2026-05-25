@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import argparse
+import inspect
 import json
 from pathlib import Path
 import shutil
@@ -25,6 +26,8 @@ class LoRATrainingConfig:
     resume_from_checkpoint: str | None = None
     backup_weights: bool = True
     early_stopping_patience: int | None = 2
+    eval_metadata: str | None = None
+    eval_split: str = "dev"
 
 
 def _read_messages_jsonl(path: str | Path) -> list[dict[str, Any]]:
@@ -100,20 +103,22 @@ def train_lora_sft(config: LoRATrainingConfig) -> Path:
     )
     model = get_peft_model(model, lora_config)
 
-    training_args = TrainingArguments(
-        output_dir=str(output_dir / "checkpoints"),
-        per_device_train_batch_size=config.batch_size,
-        per_device_eval_batch_size=config.batch_size,
-        gradient_accumulation_steps=config.gradient_accumulation_steps,
-        learning_rate=config.learning_rate,
-        num_train_epochs=config.epochs,
-        logging_dir=str(output_dir / "logs"),
-        logging_steps=10,
-        evaluation_strategy="epoch",
-        save_strategy="epoch",
-        save_total_limit=3,
-        report_to=[],
-    )
+    training_kwargs = {
+        "output_dir": str(output_dir / "checkpoints"),
+        "per_device_train_batch_size": config.batch_size,
+        "per_device_eval_batch_size": config.batch_size,
+        "gradient_accumulation_steps": config.gradient_accumulation_steps,
+        "learning_rate": config.learning_rate,
+        "num_train_epochs": config.epochs,
+        "logging_dir": str(output_dir / "logs"),
+        "logging_steps": 10,
+        "save_strategy": "epoch",
+        "save_total_limit": 3,
+        "report_to": [],
+    }
+    strategy_name = "eval_strategy" if "eval_strategy" in inspect.signature(TrainingArguments.__init__).parameters else "evaluation_strategy"
+    training_kwargs[strategy_name] = "epoch"
+    training_args = TrainingArguments(**training_kwargs)
 
     callbacks = []
     if config.early_stopping_patience is not None:
@@ -146,6 +151,22 @@ def train_lora_sft(config: LoRATrainingConfig) -> Path:
         "weight_backup_required": config.backup_weights,
     }
     (output_dir / "resume_state.json").write_text(json.dumps(resume_state, ensure_ascii=False, indent=2), encoding="utf-8")
+    if config.eval_metadata:
+        if config.eval_split == "test":
+            raise ValueError("post-train auto evaluation must not use final test; run the locked final evaluation separately")
+        from term_ai.experiment.lm_eval import run_hf_zero_shot
+
+        eval_metrics = run_hf_zero_shot(
+            metadata_path=config.eval_metadata,
+            output_dir=output_dir / "post_train_eval",
+            model_name_or_path=config.model_name_or_path,
+            eval_split=config.eval_split,
+            adapter_path=output_dir / "final_adapter",
+            final_test_once=False,
+        )
+        (output_dir / "post_train_eval_metrics.json").write_text(
+            json.dumps(eval_metrics, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
     return output_dir / "final_adapter"
 
 
@@ -166,6 +187,8 @@ def main() -> None:
     parser.add_argument("--resume-from-checkpoint")
     parser.add_argument("--early-stopping-patience", type=int, default=2)
     parser.add_argument("--no-weight-backup", action="store_true")
+    parser.add_argument("--eval-metadata")
+    parser.add_argument("--eval-split", default="dev")
     args = parser.parse_args()
     adapter = train_lora_sft(
         LoRATrainingConfig(
@@ -184,6 +207,8 @@ def main() -> None:
             resume_from_checkpoint=args.resume_from_checkpoint,
             backup_weights=not args.no_weight_backup,
             early_stopping_patience=args.early_stopping_patience,
+            eval_metadata=args.eval_metadata,
+            eval_split=args.eval_split,
         )
     )
     print(json.dumps({"final_adapter": str(adapter)}, ensure_ascii=False, indent=2))
