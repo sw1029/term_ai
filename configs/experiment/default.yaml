@@ -15,6 +15,18 @@ model:
     - qwen2.5 3b
   experiment_id: B0
 
+execution:
+  run: false
+  output_dir: runs/hydra_run
+  metadata: data/metadata/raw_mcq_v1.jsonl
+  train_metadata: null
+  primary_predictions: null
+  fallback_predictions: null
+  model_name_or_path: null
+  adapter_path: null
+  limit: null
+  allow_repeat_test: false
+
 training:
   framework: pytorch
   sft_method: lora
@@ -65,3 +77,22 @@ reproducibility:
   split_version: word_split_seed42
   prompt_version: aug_prompt_v1
   config_snapshot: true
+
+workflow:
+  master_enabled: false
+  execute_expensive_steps: false
+  config:
+    runs_dir: runs
+    model_matrix: experiments/model_matrix.json
+    report_dir: reports
+    data:
+      input_path: pharaprased_voca.jsonl
+      output_dir: data
+      seed: 42
+    augmentation:
+      enabled: false
+      total: 0
+      model: gpt-5.4-mini
+      env_path: .env
+      requests_per_second: 1.0
+    approved_metadata: null
