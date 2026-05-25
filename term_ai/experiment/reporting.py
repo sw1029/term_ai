@@ -73,10 +73,32 @@ def _best_metric(metrics: list[dict[str, Any]], key: str, reverse: bool = True) 
     return sorted(candidates, key=lambda row: float(row[key]), reverse=reverse)[0]
 
 
+def _error_breakdown(errors: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in errors:
+        tags = row.get("stress_tags") or ["untagged"]
+        for tag in tags:
+            key = str(tag)
+            counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def _ops_missing(metrics: list[dict[str, Any]]) -> list[str]:
+    required = ["latency_ms", "tokens_per_sec", "ram_mb", "estimated_cost_usd"]
+    missing: list[str] = []
+    for key in required:
+        if not any((row.get("ops_metric_coverage") or {}).get(key, 0) for row in metrics):
+            missing.append(key)
+    return missing
+
+
 def _render_final_report(metrics: list[dict[str, Any]], errors: list[dict[str, Any]]) -> str:
     best_accuracy = _best_metric(metrics, "accuracy")
     best_latency = _best_metric(metrics, "latency_p95", reverse=False)
     best_cost = _best_metric(metrics, "cost_per_1000_questions", reverse=False)
+    best_ece = _best_metric(metrics, "ece", reverse=False)
+    error_breakdown = _error_breakdown(errors)
+    missing_ops = _ops_missing(metrics)
     lines = [
         "# Final Experiment Report",
         "",
@@ -96,12 +118,26 @@ def _render_final_report(metrics: list[dict[str, Any]], errors: list[dict[str, A
         lines.append(
             f"- Lowest cost/1000 questions: {best_cost.get('cost_per_1000_questions'):.6f} ({best_cost.get('run_dir', 'unknown run')})"
         )
+    if best_ece:
+        lines.append(f"- Best calibration ECE: {best_ece.get('ece'):.4f} ({best_ece.get('run_dir', 'unknown run')})")
+    lines.extend(["", "## Error Analysis"])
+    if error_breakdown:
+        for tag, count in sorted(error_breakdown.items(), key=lambda item: (-item[1], item[0])):
+            lines.append(f"- {tag}: {count}")
+    else:
+        lines.append("- No prediction errors were collected.")
+    lines.extend(["", "## Operational Coverage"])
+    if missing_ops:
+        lines.append(f"- Missing or empty operational metrics: {', '.join(missing_ops)}")
+    else:
+        lines.append("- Required operational metrics were present in at least one run.")
     lines.extend(
         [
             "",
             "## Caveats",
             "- Interpret generated cloze results separately from raw GT results.",
             "- Treat this report as invalid for deployment if final test locks or raw/test_cloze split artifacts are missing.",
+            "- Treat aug_judge_pass as strict judge validated, not human approved.",
         ]
     )
     return "\n".join(lines) + "\n"
@@ -125,6 +161,9 @@ def _render_deployment_recommendation(metrics: list[dict[str, Any]], recommendat
             lines.append(f"- Accuracy leader: {best_accuracy.get('run_dir', 'unknown run')}")
         if best_cost:
             lines.append(f"- Cost leader: {best_cost.get('run_dir', 'unknown run')}")
+        missing_ops = _ops_missing(metrics)
+        if missing_ops:
+            lines.append(f"- Do not finalize deployment until these metrics are populated: {', '.join(missing_ops)}")
         lines.append("- Check stress subset and calibration before using confidence-based fallback in production.")
     return "\n".join(lines) + "\n"
 
