@@ -5,7 +5,9 @@ from typing import Any
 
 from term_ai.contracts import (
     AutoFilterResult,
+    TASK_ANTONYM,
     TASK_CONTEXT_CLOZE,
+    TASK_SYNONYM,
     TASK_TYPES,
     normalize_key,
     stable_id,
@@ -73,7 +75,14 @@ class AutoFilter:
                         warnings.append("near_duplicate_options")
                         break
 
+        if task_type in {TASK_SYNONYM, TASK_ANTONYM} and isinstance(word, str):
+            if normalize_key(word) in normalized_options:
+                errors.append("target_word_in_options")
+
         context = payload.get("context")
+        if task_type != TASK_CONTEXT_CLOZE and isinstance(context, str) and "___" in context:
+            errors.append("blank_context_for_non_cloze")
+
         if task_type in {TASK_CONTEXT_CLOZE}:
             if not isinstance(context, str) or not context.strip():
                 errors.append("missing_context")

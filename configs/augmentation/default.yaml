@@ -20,6 +20,7 @@ teacher:
   model: "gpt-5.4-mini"
   env_path: .env
   prompt_version: aug_prompt_v1
+  requests_per_second: 1.0
 
 validation:
   auto_filter:

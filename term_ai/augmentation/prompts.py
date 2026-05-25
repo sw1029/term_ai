@@ -39,6 +39,8 @@ Dataset rules:
 - This is only an augmentation candidate, not ground truth.
 - Do not put metadata fields inside the final SFT record.
 - Context Cloze must not expose the correct option in the context.
+- Only Context Cloze may use "___" in the context.
+- Synonym Selection and Antonym Selection options must not include the target word itself.
 - Options must not be duplicates or near duplicates.
 - The correct option must be unambiguous in TOEIC business context.
 """

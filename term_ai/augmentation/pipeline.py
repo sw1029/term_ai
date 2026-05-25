@@ -4,6 +4,7 @@ import argparse
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import time
 from typing import Any
 
 from term_ai.augmentation.anchors import extract_anchors
@@ -68,12 +69,17 @@ def generate_candidates(
     model: str,
     env_path: Path,
     limit: int | None = None,
+    requests_per_second: float = 1.0,
 ) -> int:
     if task_type not in TASK_TYPES:
         raise ValueError(f"unsupported task_type: {task_type}")
+    if requests_per_second <= 0:
+        raise ValueError("requests_per_second must be positive")
 
     teacher = OpenAITeacherClient(model=model, env_path=str(env_path))
     count = 0
+    min_interval = 1.0 / requests_per_second
+    last_request_at: float | None = None
     with anchors_path.open("r", encoding="utf-8") as input_handle, output_path.open(
         "w", encoding="utf-8", newline="\n"
     ) as output_handle:
@@ -81,12 +87,17 @@ def generate_candidates(
             anchor = json.loads(line)
             if limit is not None and count >= limit:
                 break
+            if last_request_at is not None:
+                elapsed = time.monotonic() - last_request_at
+                if elapsed < min_interval:
+                    time.sleep(min_interval - elapsed)
             prompt = build_generation_prompt(
                 task_type=task_type,
                 word=anchor["word"],
                 pos=anchor["pos"],
                 meaning=anchor["meaning"],
             )
+            last_request_at = time.monotonic()
             payload = teacher.generate_json(prompt)
             item_id = stable_id("aug", anchor["anchor_id"], task_type, payload)
             metadata = AugmentationMetadata(
@@ -229,6 +240,7 @@ def main() -> None:
     generate.add_argument("--model", default="gpt-5.4-mini")
     generate.add_argument("--env", default=".env")
     generate.add_argument("--limit", type=int)
+    generate.add_argument("--requests-per-second", type=float, default=1.0)
 
     auto_filter = subparsers.add_parser("auto-filter")
     auto_filter.add_argument("--metadata", required=True)
@@ -261,6 +273,7 @@ def main() -> None:
             model=args.model,
             env_path=Path(args.env),
             limit=args.limit,
+            requests_per_second=args.requests_per_second,
         )
         print(json.dumps({"written": count}, ensure_ascii=False))
     elif args.command == "auto-filter":

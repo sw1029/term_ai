@@ -17,11 +17,21 @@ train = [
   "datasets",
   "peft",
   "accelerate",
+  "bitsandbytes",
 ]
 metrics = [
   "scikit-learn",
+]
+baseline = [
+  "sentence-transformers",
+]
+dev = [
+  "pytest",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.setuptools.packages.find]
+include = ["term_ai*"]
