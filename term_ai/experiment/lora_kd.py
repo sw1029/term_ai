@@ -233,6 +233,21 @@ def train_lora_sft_kd(config: LoRAKDConfig) -> Path:
     (output_dir / "kd_training_config.json").write_text(
         json.dumps(config.__dict__, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    checkpoint_manifest = {
+        "experiment_family": "G3",
+        "checkpoint_type": "lora_sft_kd",
+        "final_adapter": str(final_adapter),
+        "model_name_or_path": config.model_name_or_path,
+        "metadata_jsonl": config.metadata_jsonl,
+        "dev_metadata_jsonl": config.dev_metadata_jsonl,
+        "lambda_soft": config.lambda_soft,
+        "hard_label_only": config.hard_label_only,
+        "include_rationale": config.include_rationale,
+        "response_format": config.response_format,
+    }
+    (output_dir / "g3_checkpoint_manifest.json").write_text(
+        json.dumps(checkpoint_manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     return final_adapter
 
 
