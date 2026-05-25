@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import time
 from typing import Any
 
 from term_ai.contracts import RAW_GT_STATUS, write_jsonl
@@ -25,6 +26,7 @@ def run_hf_zero_shot(
     final_test_once: bool = True,
     experiment_id: str | None = None,
     test_lock_dir: str | Path | None = None,
+    local_cost_per_hour_usd: float = 0.0,
 ) -> dict[str, Any]:
     try:
         import torch
@@ -43,6 +45,7 @@ def run_hf_zero_shot(
         lock_dir=test_lock_dir,
     )
 
+    cold_start_begin = time.perf_counter()
     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
     quant_config = None
     if quantization == "8bit":
@@ -66,6 +69,7 @@ def run_hf_zero_shot(
         model = PeftModel.from_pretrained(model, str(adapter_path))
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+    cold_start_ms = (time.perf_counter() - cold_start_begin) * 1000
 
     items = [item for item in load_mcq_items(metadata_path, min_status=min_status) if item.split == eval_split]
     if not items:
@@ -74,7 +78,7 @@ def run_hf_zero_shot(
         items = items[:limit]
     predictions: list[dict[str, Any]] = []
 
-    for item in items:
+    for index, item in enumerate(items):
         prompt = item.prompt()
         inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
         with timed() as state:
@@ -95,6 +99,9 @@ def run_hf_zero_shot(
                     "tokens_per_sec": tokens_per_second(new_tokens, state["latency_ms"]),
                     "quantization": quantization or "fp16",
                     "adapter_path": str(adapter_path) if adapter_path is not None else None,
+                    "batch_size": 1,
+                    "cold_start_ms": cold_start_ms if index == 0 else 0.0,
+                    "local_cost_per_hour_usd": local_cost_per_hour_usd,
                     **memory_snapshot(),
                 },
             )
@@ -103,6 +110,8 @@ def run_hf_zero_shot(
     metrics = summarize_predictions(predictions)
     metrics["adapter_path"] = str(adapter_path) if adapter_path is not None else None
     metrics["quantization"] = quantization or "fp16"
+    metrics["cold_start_ms"] = cold_start_ms
+    metrics["local_cost_per_hour_usd"] = local_cost_per_hour_usd
     write_jsonl(output_dir / "prediction_log.jsonl", predictions)
     (output_dir / "metric_log.json").write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
     return metrics
@@ -121,6 +130,7 @@ def main() -> None:
     parser.add_argument("--adapter-path")
     parser.add_argument("--experiment-id")
     parser.add_argument("--test-lock-dir")
+    parser.add_argument("--local-cost-per-hour-usd", type=float, default=0.0)
     parser.add_argument("--allow-repeat-test", action="store_true")
     args = parser.parse_args()
     metrics = run_hf_zero_shot(
@@ -136,6 +146,7 @@ def main() -> None:
         final_test_once=not args.allow_repeat_test,
         experiment_id=args.experiment_id,
         test_lock_dir=args.test_lock_dir,
+        local_cost_per_hour_usd=args.local_cost_per_hour_usd,
     )
     print(json.dumps(metrics, ensure_ascii=False, indent=2))
 

@@ -188,6 +188,11 @@ def summarize_predictions(predictions: list[dict]) -> dict:
     correct = [int(truth == pred) for truth, pred in zip(y_true, y_pred)]
     confidence = [float(row.get("confidence", 1.0)) for row in predictions]
     latencies = [float(row["latency_ms"]) for row in predictions if "latency_ms" in row]
+    batch_size_1_latencies = [
+        float(row["latency_ms"])
+        for row in predictions
+        if "latency_ms" in row and int(row.get("batch_size", 1)) == 1
+    ]
     token_speeds = [float(row["tokens_per_sec"]) for row in predictions if "tokens_per_sec" in row]
     peak_vram = [float(row["peak_vram_mb"]) for row in predictions if "peak_vram_mb" in row]
     ram_values = [float(row["ram_mb"]) for row in predictions if "ram_mb" in row]
@@ -230,6 +235,7 @@ def summarize_predictions(predictions: list[dict]) -> dict:
         "cold_start_ms": max(cold_start_ms) if cold_start_ms else 0.0,
         "ops_metric_coverage": {
             "latency_ms": len(latencies),
+            "batch_size_1_latency_ms": len(batch_size_1_latencies),
             "tokens_per_sec": len(token_speeds),
             "peak_vram_mb": len(peak_vram),
             "ram_mb": len(ram_values),
@@ -248,4 +254,5 @@ def summarize_predictions(predictions: list[dict]) -> dict:
     elif ram_values:
         summary["peak_VRAM_or_RAM"] = max(ram_values)
     summary.update(latency_summary(latencies))
+    summary["batch_size_1_latency_p95"] = latency_summary(batch_size_1_latencies)["latency_p95"]
     return summary
