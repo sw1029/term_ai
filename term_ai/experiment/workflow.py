@@ -328,6 +328,7 @@ def run_master_workflow(config: dict[str, Any], execute: bool = False) -> dict[s
                     limit=judge_cfg.get("limit"),
                     generator_model=str(aug_cfg.get("model", "gpt-5.4-mini")),
                     enforce_model_separation=bool(judge_cfg.get("enforce_model_separation", True)),
+                    reasoning_effort=judge_cfg.get("reasoning_effort"),
                 )
                 apply_counts = apply_judge_validation(auto_path, judge_path, judged_metadata_path)
                 split_result["judge"] = judge_counts

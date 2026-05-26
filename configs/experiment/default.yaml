@@ -171,6 +171,7 @@ workflow:
       judge:
         enabled: false
         model: gpt-5.4-mini
+        reasoning_effort: null
         env_path: .env
         requests_per_second: 1.0
         enforce_model_separation: true

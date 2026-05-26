@@ -39,6 +39,7 @@ def judge_metadata(
     limit: int | None = None,
     generator_model: str | None = None,
     enforce_model_separation: bool = True,
+    reasoning_effort: str | None = None,
 ) -> dict[str, int]:
     if requests_per_second <= 0:
         raise ValueError("requests_per_second must be positive")
@@ -46,7 +47,7 @@ def judge_metadata(
     generator_model = normalize_openai_model_id(generator_model) if generator_model else None
     if enforce_model_separation and generator_model and model == generator_model:
         raise ValueError("judge model must differ from generator model")
-    teacher = OpenAITeacherClient(model=model, env_path=str(env_path))
+    teacher = OpenAITeacherClient(model=model, env_path=str(env_path), reasoning_effort=reasoning_effort)
     min_interval = 1.0 / requests_per_second
     last_request_at: float | None = None
     counts = {"written": 0, "accept": 0, "reject": 0}
@@ -71,6 +72,8 @@ def judge_metadata(
             result = teacher.generate_json(build_judge_prompt(row.get("payload") or {}))
             result["item_id"] = row["item_id"]
             result.setdefault("judge_model", model)
+            if reasoning_effort:
+                result.setdefault("judge_reasoning_effort", reasoning_effort)
             decision = str(result.get("final_decision", "reject"))
             counts["accept" if decision == "accept" else "reject"] += 1
             counts["written"] += 1
@@ -87,6 +90,7 @@ def main() -> None:
     parser.add_argument("--requests-per-second", type=float, default=1.0)
     parser.add_argument("--limit", type=int)
     parser.add_argument("--generator-model")
+    parser.add_argument("--reasoning-effort", choices=["none", "low", "medium", "high", "xhigh"])
     parser.add_argument("--allow-same-model", action="store_true")
     args = parser.parse_args()
     counts = judge_metadata(
@@ -98,6 +102,7 @@ def main() -> None:
         limit=args.limit,
         generator_model=args.generator_model,
         enforce_model_separation=not args.allow_same_model,
+        reasoning_effort=args.reasoning_effort,
     )
     print(json.dumps(counts, ensure_ascii=False, indent=2))
 
