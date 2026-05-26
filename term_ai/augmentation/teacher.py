@@ -13,9 +13,16 @@ class TeacherClient(Protocol):
 
 
 class OpenAITeacherClient:
-    def __init__(self, model: str, api_key: str | None = None, env_path: str = ".env") -> None:
+    def __init__(
+        self,
+        model: str,
+        api_key: str | None = None,
+        env_path: str = ".env",
+        reasoning_effort: str | None = None,
+    ) -> None:
         self.model = normalize_openai_model_id(model)
         self.api_key = api_key or resolve_openai_api_key(env_path)
+        self.reasoning_effort = reasoning_effort
         if not self.api_key:
             raise RuntimeError("OpenAI API key was not found in OPENAI_API_KEY or api-key")
 
@@ -30,7 +37,10 @@ class OpenAITeacherClient:
         # Prefer Responses API when present, but keep a Chat Completions fallback
         # because SDK versions vary across environments.
         try:
-            response = client.responses.create(model=self.model, input=prompt)
+            response_args = {"model": self.model, "input": prompt}
+            if self.reasoning_effort:
+                response_args["reasoning"] = {"effort": self.reasoning_effort}
+            response = client.responses.create(**response_args)
             text = getattr(response, "output_text", None)
             if text:
                 return json.loads(text)
