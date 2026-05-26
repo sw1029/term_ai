@@ -1,0 +1,17 @@
+{
+  "raw_sft_dir": "data/sft",
+  "aug_metadata": "data/metadata/aug_judge_pass_v1.jsonl",
+  "min_status": "aug_judge_pass",
+  "output_prefix": "raw_judge_aug",
+  "counts": {
+    "train": 5787,
+    "train_raw": 5422,
+    "train_aug": 365,
+    "dev": 1247,
+    "dev_raw": 1170,
+    "dev_aug": 77,
+    "test": 1263,
+    "test_raw": 1151,
+    "test_aug": 112
+  }
+}

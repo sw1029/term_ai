@@ -38,6 +38,8 @@ Required JSON fields:
 Dataset rules:
 - This is only an augmentation candidate, not ground truth.
 - Do not put metadata fields inside the final SFT record.
+- Context Cloze context must be a natural business English sentence of 20 to 35 words.
+- Context Cloze must use exactly one "___" blank and the correct option must fit grammatically when inserted.
 - Context Cloze must not expose the correct option in the context.
 - Only Context Cloze may use "___" in the context.
 - Synonym Selection and Antonym Selection options must not include the target word itself.

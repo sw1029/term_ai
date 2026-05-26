@@ -1,0 +1,17 @@
+{
+  "raw_gt_source": "data/metadata/raw_mcq_v1.jsonl",
+  "validated_aug_source": "data/metadata/aug_judge_pass_v1.jsonl",
+  "validated_min_status": "aug_judge_pass",
+  "rules": [
+    "test_raw contains only raw_gt rows from test split",
+    "test_cloze_validated contains only validated Context Cloze rows from test split",
+    "generated test cloze is never merged into raw test",
+    "aug_judge_pass is strict judge validated, not human approved"
+  ],
+  "counts": {
+    "train_raw": 5422,
+    "dev_raw": 1170,
+    "test_raw": 1151,
+    "test_cloze_validated": 36
+  }
+}

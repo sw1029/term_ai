@@ -1,0 +1,15 @@
+{
+  "source_metadata": "data/metadata/aug_judge_pass_v1.jsonl",
+  "min_status": "aug_judge_pass",
+  "output_prefix": "judge_validated",
+  "human_spot_check_required_for_human_approved": false,
+  "notes": [
+    "judge_validated means auto filter plus independent judge validation",
+    "human_approved is reserved for aug_human_pass and must not be inferred from aug_judge_pass"
+  ],
+  "counts": {
+    "train": 365,
+    "dev": 77,
+    "test": 112
+  }
+}
