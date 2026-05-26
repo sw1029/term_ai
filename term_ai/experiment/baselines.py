@@ -8,10 +8,11 @@ from typing import Any
 
 import numpy as np
 
-from term_ai.contracts import RAW_GT_STATUS, answer_label, write_jsonl
+from term_ai.contracts import RAW_GT_STATUS, answer_label
 from term_ai.experiment.metrics import summarize_predictions
 from term_ai.experiment.mcq import MCQItem, load_mcq_items, prediction_row
 from term_ai.experiment.ops import memory_snapshot, timed
+from term_ai.experiment.progress import InterruptGuard, ProgressLogger, backup_artifact
 from term_ai.experiment.test_lock import enforce_final_test_once
 
 
@@ -40,9 +41,13 @@ def _b0_predictions_with_model(
     items: list[MCQItem],
     model: Any,
     threshold: float | None = None,
+    progress: ProgressLogger | None = None,
 ) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
+    item_ids = [item.item_id for item in items]
+    rows: list[dict[str, Any]] = progress.predictions_for_items(item_ids) if progress else []
     for item in items:
+        if progress is not None and progress.has_prediction(item.item_id):
+            continue
         with timed() as state:
             features = _item_features(model, item)
         scores = features[:, 0]
@@ -50,20 +55,24 @@ def _b0_predictions_with_model(
         confidence = float((scores[idx] + 1) / 2)
         score = float(scores[idx])
         prediction = answer_label(idx) if threshold is None or score >= threshold else "ABSTAIN"
-        rows.append(
-            prediction_row(
-                item,
-                prediction,
-                confidence,
-                latency_ms=state["latency_ms"],
-                extra={
-                    "score": score,
-                    "threshold": threshold,
-                    "abstained": prediction == "ABSTAIN",
-                    **memory_snapshot(),
-                },
-            )
+        row = prediction_row(
+            item,
+            prediction,
+            confidence,
+            latency_ms=state["latency_ms"],
+            extra={
+                "score": score,
+                "threshold": threshold,
+                "abstained": prediction == "ABSTAIN",
+                **memory_snapshot(),
+            },
         )
+        if progress is not None:
+            progress.append_prediction(row)
+        else:
+            rows.append(row)
+    if progress is not None:
+        return progress.predictions_for_items(item_ids)
     return rows
 
 
@@ -157,6 +166,37 @@ def predict_option_scorer(items: list[MCQItem], embedder: Any, clf: Any) -> list
     return rows
 
 
+def predict_option_scorer_with_progress(
+    items: list[MCQItem],
+    embedder: Any,
+    clf: Any,
+    progress: ProgressLogger | None = None,
+) -> list[dict[str, Any]]:
+    item_ids = [item.item_id for item in items]
+    if progress is None:
+        return predict_option_scorer(items, embedder, clf)
+    for item in items:
+        if progress.has_prediction(item.item_id):
+            continue
+        with timed() as state:
+            features = _item_features(embedder, item)
+        if hasattr(clf, "predict_proba"):
+            probs = clf.predict_proba(features)[:, 1]
+        else:
+            probs = clf.decision_function(features)
+        idx = int(np.argmax(probs))
+        progress.append_prediction(
+            prediction_row(
+                item,
+                answer_label(idx),
+                float(probs[idx]),
+                latency_ms=state["latency_ms"],
+                extra=memory_snapshot(),
+            )
+        )
+    return progress.predictions_for_items(item_ids)
+
+
 def run_baseline(
     metadata_path: str | Path,
     output_dir: str | Path,
@@ -171,6 +211,9 @@ def run_baseline(
     threshold: float | None = None,
     final_test_once: bool = True,
     test_lock_dir: str | Path | None = None,
+    resume: bool = True,
+    progress_interval_items: int = 1,
+    backup_weights: bool = True,
 ) -> dict[str, Any]:
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
@@ -180,28 +223,48 @@ def run_baseline(
     eval_items = [item for item in items if item.split == eval_split]
     if not eval_items:
         raise ValueError(f"no eval items for {experiment_id}: split={eval_split}, min_status={min_status}")
+    progress = ProgressLogger(
+        output,
+        resume=resume,
+        progress_interval_items=progress_interval_items,
+        stage=f"{experiment_id}:eval",
+        total_count=len(eval_items),
+    )
+    completed_metrics = progress.completed_metrics_if_available(item.item_id for item in eval_items)
+    if completed_metrics is not None:
+        return completed_metrics
     train_source = train_metadata_path or metadata_path
     train_items = [item for item in load_mcq_items(train_source, min_status=min_status) if item.split == train_split]
 
-    if method == "b0":
-        model = _load_embedder(embedding_model)
-        tuning: dict[str, Any] | None = None
-        if threshold is None:
-            threshold_source = threshold_metadata_path or metadata_path
-            threshold_items = [
-                item for item in load_mcq_items(threshold_source, min_status=min_status) if item.split == threshold_split
-            ]
-            tuning = tune_mxbai_threshold(threshold_items, model)
-            threshold = float(tuning["threshold"])
-        predictions = _b0_predictions_with_model(eval_items, model, threshold=threshold)
-    elif method in {"logistic", "mlp"}:
-        if not train_items:
-            raise ValueError(f"no train items available for {method}")
-        model_path = output / f"{method}_scorer.pkl"
-        embedder, clf = train_option_scorer(train_items, embedding_model, method, model_path)
-        predictions = predict_option_scorer(eval_items, embedder, clf)
-    else:
-        raise ValueError("method must be b0, logistic, or mlp")
+    with InterruptGuard(progress, stage=f"{experiment_id}:eval"):
+        if method == "b0":
+            model = _load_embedder(embedding_model)
+            tuning: dict[str, Any] | None = None
+            if threshold is None:
+                threshold_source = threshold_metadata_path or metadata_path
+                threshold_items = [
+                    item for item in load_mcq_items(threshold_source, min_status=min_status) if item.split == threshold_split
+                ]
+                tuning = tune_mxbai_threshold(threshold_items, model)
+                threshold = float(tuning["threshold"])
+            predictions = _b0_predictions_with_model(eval_items, model, threshold=threshold, progress=progress)
+        elif method in {"logistic", "mlp"}:
+            if not train_items:
+                raise ValueError(f"no train items available for {method}")
+            model_path = output / f"{method}_scorer.pkl"
+            if resume and model_path.exists():
+                with model_path.open("rb") as handle:
+                    saved = pickle.load(handle)
+                embedder = _load_embedder(str(saved.get("embedder_model_name") or embedding_model))
+                clf = saved["classifier"]
+            else:
+                embedder, clf = train_option_scorer(train_items, embedding_model, method, model_path)
+                if backup_weights:
+                    backup_artifact(model_path, output, name=f"{method}_scorer")
+            predictions = predict_option_scorer_with_progress(eval_items, embedder, clf, progress=progress)
+            tuning = None
+        else:
+            raise ValueError("method must be b0, logistic, or mlp")
 
     metrics = summarize_predictions(predictions)
     if method == "b0":
@@ -209,8 +272,7 @@ def run_baseline(
         if tuning is not None:
             metrics["threshold_tuning"] = tuning
             (output / "threshold.json").write_text(json.dumps(tuning, ensure_ascii=False, indent=2), encoding="utf-8")
-    write_jsonl(output / "prediction_log.jsonl", predictions)
-    (output / "metric_log.json").write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
+    progress.finalize_predictions(metrics, predictions)
     return metrics
 
 
@@ -229,6 +291,9 @@ def main() -> None:
     parser.add_argument("--threshold", type=float)
     parser.add_argument("--test-lock-dir")
     parser.add_argument("--allow-repeat-test", action="store_true")
+    parser.add_argument("--no-resume", action="store_true")
+    parser.add_argument("--progress-interval-items", type=int, default=1)
+    parser.add_argument("--no-weight-backup", action="store_true")
     args = parser.parse_args()
     metrics = run_baseline(
         metadata_path=args.metadata,
@@ -244,6 +309,9 @@ def main() -> None:
         threshold=args.threshold,
         final_test_once=not args.allow_repeat_test,
         test_lock_dir=args.test_lock_dir,
+        resume=not args.no_resume,
+        progress_interval_items=args.progress_interval_items,
+        backup_weights=not args.no_weight_backup,
     )
     print(json.dumps(metrics, ensure_ascii=False, indent=2))
 

@@ -11,3 +11,4 @@ runs/
 *.log
 *.ps1
 .ipynb_checkpoints
+.vscode

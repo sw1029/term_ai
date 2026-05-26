@@ -6,10 +6,16 @@ import json
 from pathlib import Path
 from typing import Any
 
-from term_ai.contracts import answer_label, write_jsonl
+from term_ai.contracts import answer_label
 from term_ai.experiment.metrics import summarize_predictions
 from term_ai.experiment.mcq import MCQItem, load_mcq_items, prediction_row
 from term_ai.experiment.ops import memory_snapshot, timed
+from term_ai.experiment.progress import (
+    InterruptGuard,
+    ProgressLogger,
+    backup_artifact,
+    resolve_latest_epoch_checkpoint,
+)
 
 
 @dataclass
@@ -25,6 +31,10 @@ class OptionClassificationHeadConfig:
     epochs: int = 3
     lambda_soft: float = 0.5
     require_teacher_scores: bool = True
+    resume: bool = True
+    progress_interval_items: int = 1
+    backup_weights: bool = True
+    backup_checkpoints: bool = True
 
 
 def _soft_targets(item: MCQItem, require_teacher_scores: bool = True) -> list[float]:
@@ -70,13 +80,6 @@ def option_classifier_rows(
 
 
 def train_option_classification_head_kd(config: OptionClassificationHeadConfig) -> dict[str, Any]:
-    try:
-        import torch
-        import torch.nn.functional as F
-        from transformers import AutoModel, AutoTokenizer
-    except ImportError as exc:
-        raise RuntimeError("Install training dependencies first: pip install -e .[train]") from exc
-
     output = Path(config.output_dir)
     output.mkdir(parents=True, exist_ok=True)
     train_items = [item for item in load_mcq_items(config.metadata_jsonl, min_status=config.min_status) if item.split == "train"]
@@ -85,6 +88,22 @@ def train_option_classification_head_kd(config: OptionClassificationHeadConfig) 
         raise ValueError("no train items for option classification head KD")
     if not dev_items:
         raise ValueError("no dev items for option classification head KD")
+    progress = ProgressLogger(
+        output,
+        resume=config.resume,
+        progress_interval_items=config.progress_interval_items,
+        stage="classification_head_kd",
+        total_count=len(dev_items),
+    )
+    completed_metrics = progress.completed_metrics_if_available(item.item_id for item in dev_items)
+    if completed_metrics is not None:
+        return completed_metrics
+    try:
+        import torch
+        import torch.nn.functional as F
+        from transformers import AutoModel, AutoTokenizer
+    except ImportError as exc:
+        raise RuntimeError("Install training dependencies first: pip install -e .[train]") from exc
 
     tokenizer = AutoTokenizer.from_pretrained(config.model_name_or_path, use_fast=True)
     if tokenizer.pad_token is None:
@@ -94,6 +113,26 @@ def train_option_classification_head_kd(config: OptionClassificationHeadConfig) 
     backbone.to(device)
     classifier = torch.nn.Linear(backbone.config.hidden_size, 1).to(device)
     optimizer = torch.optim.AdamW(list(backbone.parameters()) + list(classifier.parameters()), lr=config.learning_rate)
+    checkpoint_dir = output / "checkpoints"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    final_model = output / "option_classification_head.pt"
+    start_epoch = 0
+    if config.resume and final_model.exists():
+        saved = torch.load(final_model, map_location=device)
+        if "backbone_state_dict" in saved:
+            backbone.load_state_dict(saved["backbone_state_dict"])
+        classifier.load_state_dict(saved["classifier_state_dict"])
+        start_epoch = config.epochs
+    elif config.resume:
+        latest = resolve_latest_epoch_checkpoint(output, "option_classification_head")
+        if latest is not None:
+            saved = torch.load(latest, map_location=device)
+            if "backbone_state_dict" in saved:
+                backbone.load_state_dict(saved["backbone_state_dict"])
+            classifier.load_state_dict(saved["classifier_state_dict"])
+            if "optimizer_state_dict" in saved:
+                optimizer.load_state_dict(saved["optimizer_state_dict"])
+            start_epoch = int(saved.get("epoch", 0))
 
     def score_item(item: MCQItem) -> Any:
         encoded = tokenizer(
@@ -109,48 +148,89 @@ def train_option_classification_head_kd(config: OptionClassificationHeadConfig) 
         pooled = hidden[torch.arange(hidden.shape[0], device=device), lengths]
         return classifier(pooled).squeeze(-1)
 
-    for _ in range(config.epochs):
-        for item in train_items:
-            logits = score_item(item)
-            hard = torch.tensor([item.answer_idx], dtype=torch.long, device=device)
-            soft = torch.tensor(_soft_targets(item, config.require_teacher_scores), dtype=torch.float32, device=device)
-            hard_loss = F.cross_entropy(logits.unsqueeze(0), hard)
-            soft_loss = F.kl_div(F.log_softmax(logits, dim=0), soft, reduction="batchmean")
-            loss = hard_loss + config.lambda_soft * soft_loss
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+    def latest_checkpoint() -> Path | None:
+        return resolve_latest_epoch_checkpoint(output, "option_classification_head")
 
-    predictions: list[dict[str, Any]] = []
+    with InterruptGuard(progress, stage="classification_head_kd:training", checkpoint_callback=latest_checkpoint):
+        for epoch in range(start_epoch, config.epochs):
+            losses: list[float] = []
+            for item in train_items:
+                logits = score_item(item)
+                hard = torch.tensor([item.answer_idx], dtype=torch.long, device=device)
+                soft = torch.tensor(_soft_targets(item, config.require_teacher_scores), dtype=torch.float32, device=device)
+                hard_loss = F.cross_entropy(logits.unsqueeze(0), hard)
+                soft_loss = F.kl_div(F.log_softmax(logits, dim=0), soft, reduction="batchmean")
+                loss = hard_loss + config.lambda_soft * soft_loss
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                losses.append(float(loss.detach().cpu()))
+            checkpoint_path = checkpoint_dir / f"option_classification_head_epoch_{epoch + 1}.pt"
+            torch.save(
+                {
+                    "epoch": epoch + 1,
+                    "backbone": config.model_name_or_path,
+                    "backbone_state_dict": backbone.state_dict(),
+                    "classifier_state_dict": classifier.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "config": config.__dict__,
+                },
+                checkpoint_path,
+            )
+            if config.backup_checkpoints:
+                backup_artifact(checkpoint_path, output, name=f"option_classification_head_epoch_{epoch + 1}")
+            progress.record_metrics(
+                {
+                    "epoch": epoch + 1,
+                    "train_loss": sum(losses) / len(losses) if losses else 0.0,
+                    "completed_epochs": epoch + 1,
+                    "total_epochs": config.epochs,
+                },
+                stage="classification_head_kd:training",
+                event="epoch",
+                epoch=epoch + 1,
+                latest_checkpoint=checkpoint_path,
+            )
+
     backbone.eval()
     classifier.eval()
-    for item in dev_items:
-        with timed() as state:
-            with torch.no_grad():
-                logits = score_item(item)
-                probs = torch.softmax(logits, dim=0).detach().cpu()
-        idx = int(torch.argmax(probs).item())
-        predictions.append(
-            prediction_row(
-                item,
-                answer_label(idx),
-                float(probs[idx]),
-                latency_ms=state["latency_ms"],
-                extra=memory_snapshot(),
+    with InterruptGuard(progress, stage="classification_head_kd:eval", checkpoint_callback=latest_checkpoint):
+        for item in dev_items:
+            if progress.has_prediction(item.item_id):
+                continue
+            with timed() as state:
+                with torch.no_grad():
+                    logits = score_item(item)
+                    probs = torch.softmax(logits, dim=0).detach().cpu()
+            idx = int(torch.argmax(probs).item())
+            progress.append_prediction(
+                prediction_row(
+                    item,
+                    answer_label(idx),
+                    float(probs[idx]),
+                    latency_ms=state["latency_ms"],
+                    extra=memory_snapshot(),
+                )
             )
-        )
 
     torch.save(
         {
             "backbone": config.model_name_or_path,
+            "backbone_state_dict": backbone.state_dict(),
             "classifier_state_dict": classifier.state_dict(),
             "config": config.__dict__,
         },
-        output / "option_classification_head.pt",
+        final_model,
     )
+    final_backup = backup_artifact(final_model, output, name="option_classification_head") if config.backup_weights else None
+    predictions = progress.predictions_for_items(item.item_id for item in dev_items)
     metrics = summarize_predictions(predictions)
-    write_jsonl(output / "prediction_log.jsonl", predictions)
-    (output / "metric_log.json").write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
+    progress.finalize_predictions(
+        metrics,
+        predictions,
+        final_artifact=final_model,
+        details={"final_backup": str(final_backup) if final_backup else None},
+    )
     (output / "classification_head_config.json").write_text(
         json.dumps(config.__dict__, ensure_ascii=False, indent=2), encoding="utf-8"
     )
@@ -170,8 +250,18 @@ def main() -> None:
     parser.add_argument("--epochs", type=int, default=3)
     parser.add_argument("--lambda-soft", type=float, default=0.5)
     parser.add_argument("--allow-missing-teacher-scores", dest="require_teacher_scores", action="store_false")
+    parser.add_argument("--no-resume", action="store_true")
+    parser.add_argument("--progress-interval-items", type=int, default=1)
+    parser.add_argument("--no-weight-backup", action="store_true")
+    parser.add_argument("--no-checkpoint-backup", action="store_true")
     parser.set_defaults(require_teacher_scores=True)
     args = parser.parse_args()
+    args.resume = not args.no_resume
+    args.backup_weights = not args.no_weight_backup
+    args.backup_checkpoints = not args.no_checkpoint_backup
+    del args.no_resume
+    del args.no_weight_backup
+    del args.no_checkpoint_backup
     result = train_option_classification_head_kd(OptionClassificationHeadConfig(**vars(args)))
     print(json.dumps(result, ensure_ascii=False, indent=2))
 

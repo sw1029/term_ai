@@ -42,5 +42,11 @@ def enforce_final_test_once(
             json.dump(payload, handle, ensure_ascii=False, indent=2)
     except FileExistsError as exc:
         existing = lock_path.read_text(encoding="utf-8")
+        try:
+            existing_payload = json.loads(existing)
+        except json.JSONDecodeError:
+            existing_payload = {}
+        if str(existing_payload.get("output_dir")) == str(output):
+            return lock_path
         raise RuntimeError(f"final test is already locked for {experiment_id}: {lock_path}\n{existing}") from exc
     return lock_path

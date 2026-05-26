@@ -5,8 +5,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from term_ai.contracts import write_jsonl
 from term_ai.experiment.metrics import summarize_predictions
+from term_ai.experiment.progress import ProgressLogger, append_jsonl, load_jsonl
 
 
 def _load_predictions(path: str | Path) -> dict[str, dict[str, Any]]:
@@ -108,10 +108,24 @@ def run_hybrid_policy(
     cross_encoder_cost_per_1000: float = 0.0,
     fallback_cost_per_1000: float = 0.0,
     stress_fallback: bool = True,
+    resume: bool = True,
+    progress_interval_items: int = 1,
 ) -> dict[str, Any]:
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
     primary = _load_predictions(primary_predictions)
     fallback = _load_predictions(fallback_predictions)
     cross_encoder = _load_predictions(cross_encoder_predictions) if cross_encoder_predictions else {}
+    progress = ProgressLogger(
+        output,
+        resume=resume,
+        progress_interval_items=progress_interval_items,
+        stage="H1:hybrid",
+        total_count=len(primary),
+    )
+    completed_metrics = progress.completed_metrics_if_available(primary.keys())
+    if completed_metrics is not None:
+        return completed_metrics
     low_threshold = confidence_threshold if low_confidence_threshold is None else low_confidence_threshold
     high_threshold = confidence_threshold if high_confidence_threshold is None else high_confidence_threshold
     rows, counts = _build_hybrid_rows(primary, fallback, cross_encoder, low_threshold, high_threshold, stress_fallback)
@@ -125,10 +139,9 @@ def run_hybrid_policy(
         fallback_cost_per_1000,
     )
 
-    output = Path(output_dir)
-    output.mkdir(parents=True, exist_ok=True)
-    write_jsonl(output / "prediction_log.jsonl", rows)
-    (output / "metric_log.json").write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
+    for row in rows:
+        progress.append_prediction(row)
+    progress.finalize_predictions(metrics, rows)
     return metrics
 
 
@@ -142,17 +155,39 @@ def tune_hybrid_policy(
     cross_encoder_cost_per_1000: float = 0.0,
     fallback_cost_per_1000: float = 0.0,
     stress_fallback: bool = True,
+    resume: bool = True,
+    progress_interval_items: int = 1,
 ) -> dict[str, Any]:
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
     primary = _load_predictions(primary_predictions)
     fallback = _load_predictions(fallback_predictions)
     cross_encoder = _load_predictions(cross_encoder_predictions) if cross_encoder_predictions else {}
+    progress = ProgressLogger(
+        output,
+        resume=resume,
+        progress_interval_items=progress_interval_items,
+        stage="H1:hybrid_tuning",
+        total_count=len(primary),
+    )
+    completed_metrics = progress.completed_metrics_if_available(primary.keys())
+    if completed_metrics is not None:
+        return completed_metrics
     grid = threshold_grid or [0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
-    trials: list[dict[str, Any]] = []
-    best: dict[str, Any] | None = None
-    best_rows: list[dict[str, Any]] = []
+    trial_partial = output / "hybrid_policy_tuning.partial.jsonl"
+    if not resume and trial_partial.exists():
+        trial_partial.unlink()
+    trials: list[dict[str, Any]] = load_jsonl(trial_partial) if resume else []
+    completed_pairs = {
+        (float(row["low_confidence_threshold"]), float(row["high_confidence_threshold"]))
+        for row in trials
+        if "low_confidence_threshold" in row and "high_confidence_threshold" in row
+    }
     for low in grid:
         for high in grid:
             if low > high:
+                continue
+            if (float(low), float(high)) in completed_pairs:
                 continue
             rows, counts = _build_hybrid_rows(primary, fallback, cross_encoder, low, high, stress_fallback)
             metrics = _hybrid_metrics(
@@ -174,23 +209,41 @@ def tune_hybrid_policy(
                 "parse_error_rate": metrics["parse_error_rate"],
             }
             trials.append(trial)
-            key = (
-                float(metrics["accuracy"]),
-                -float(metrics["cost_per_1000_questions"]),
-                -float(metrics["fallback_rate"]),
-                -float(metrics["cross_encoder_rate"]),
-            )
-            if best is None or key > best["_selection_key"]:
-                best = {**metrics, "_selection_key": key}
-                best_rows = rows
-    if best is None:
+            append_jsonl(trial_partial, trial)
+            progress.record_metrics(trial, stage="H1:hybrid_tuning", event="trial")
+    if not trials:
         raise ValueError("threshold_grid produced no valid low/high threshold pairs")
 
+    best_trial = max(
+        trials,
+        key=lambda trial: (
+            float(trial["accuracy"]),
+            -float(trial["cost_per_1000_questions"]),
+            -float(trial["fallback_rate"]),
+            -float(trial["cross_encoder_rate"]),
+        ),
+    )
+    best_rows, best_counts = _build_hybrid_rows(
+        primary,
+        fallback,
+        cross_encoder,
+        float(best_trial["low_confidence_threshold"]),
+        float(best_trial["high_confidence_threshold"]),
+        stress_fallback,
+    )
+    best = _hybrid_metrics(
+        best_rows,
+        best_counts,
+        float(best_trial["low_confidence_threshold"]),
+        float(best_trial["high_confidence_threshold"]),
+        primary_cost_per_1000,
+        cross_encoder_cost_per_1000,
+        fallback_cost_per_1000,
+    )
     best.pop("_selection_key", None)
-    output = Path(output_dir)
-    output.mkdir(parents=True, exist_ok=True)
-    write_jsonl(output / "prediction_log.jsonl", best_rows)
-    (output / "metric_log.json").write_text(json.dumps(best, ensure_ascii=False, indent=2), encoding="utf-8")
+    for row in best_rows:
+        progress.append_prediction(row)
+    progress.finalize_predictions(best, best_rows)
     tuning = {"threshold_grid": grid, "trials": trials, "selected_policy": best}
     (output / "hybrid_policy_tuning.json").write_text(json.dumps(tuning, ensure_ascii=False, indent=2), encoding="utf-8")
     return best
@@ -211,6 +264,8 @@ def main() -> None:
     parser.add_argument("--disable-stress-fallback", action="store_true")
     parser.add_argument("--tune-policy", action="store_true")
     parser.add_argument("--threshold-grid", type=float, nargs="*")
+    parser.add_argument("--no-resume", action="store_true")
+    parser.add_argument("--progress-interval-items", type=int, default=1)
     args = parser.parse_args()
     if args.tune_policy:
         metrics = tune_hybrid_policy(
@@ -223,6 +278,8 @@ def main() -> None:
             cross_encoder_cost_per_1000=args.cross_encoder_cost_per_1000,
             fallback_cost_per_1000=args.fallback_cost_per_1000,
             stress_fallback=not args.disable_stress_fallback,
+            resume=not args.no_resume,
+            progress_interval_items=args.progress_interval_items,
         )
     else:
         metrics = run_hybrid_policy(
@@ -237,6 +294,8 @@ def main() -> None:
             cross_encoder_cost_per_1000=args.cross_encoder_cost_per_1000,
             fallback_cost_per_1000=args.fallback_cost_per_1000,
             stress_fallback=not args.disable_stress_fallback,
+            resume=not args.no_resume,
+            progress_interval_items=args.progress_interval_items,
         )
     print(json.dumps(metrics, ensure_ascii=False, indent=2))
 

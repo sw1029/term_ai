@@ -37,6 +37,7 @@ model:
 
 execution:
   run: false
+  resume: true
   output_dir: runs/hydra_run
   metadata: null
   min_status: null
@@ -95,6 +96,9 @@ training:
   sft_method: lora
   resume: true
   weight_backup: true
+  backup_checkpoints: true
+  save_steps: null
+  save_total_limit: 3
   lora:
     r: 8
     alpha: 16
@@ -138,6 +142,7 @@ logging:
   prediction_log: prediction_log.jsonl
   checkpoint_dir: checkpoints
   backup_dir: backups
+  progress_interval_items: 1
 
 reproducibility:
   seed: 42

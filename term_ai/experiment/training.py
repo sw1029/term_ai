@@ -5,8 +5,15 @@ import argparse
 import inspect
 import json
 from pathlib import Path
-import shutil
 from typing import Any
+
+from term_ai.experiment.progress import (
+    InterruptGuard,
+    ProgressLogger,
+    backup_artifact,
+    resolve_latest_checkpoint,
+    utc_timestamp,
+)
 
 
 @dataclass
@@ -24,10 +31,15 @@ class LoRATrainingConfig:
     lora_alpha: int = 16
     lora_dropout: float = 0.05
     resume_from_checkpoint: str | None = None
+    resume: bool = True
     backup_weights: bool = True
+    backup_checkpoints: bool = True
+    save_steps: int | None = None
+    save_total_limit: int = 3
     early_stopping_patience: int | None = 2
     eval_metadata: str | None = None
     eval_split: str = "dev"
+    progress_interval_items: int = 1
 
 
 def _read_messages_jsonl(path: str | Path) -> list[dict[str, Any]]:
@@ -50,6 +62,87 @@ def _format_chat(tokenizer: Any, record: dict[str, Any]) -> str:
     return "\n".join(f"{message['role']}: {message['content']}" for message in messages)
 
 
+def _make_trainer_progress_callback(
+    trainer_callback_cls: type,
+    progress: ProgressLogger,
+    *,
+    backup_checkpoints: bool = True,
+) -> Any:
+    class ExperimentProgressCallback(trainer_callback_cls):  # type: ignore[misc]
+        def on_train_begin(self, args: Any, state: Any, control: Any, **_: Any) -> Any:
+            progress.write_state(
+                "running",
+                "training",
+                completed_count=int(getattr(state, "global_step", 0) or 0),
+                total_count=int(getattr(state, "max_steps", 0) or 0) or None,
+            )
+            return control
+
+        def on_log(self, args: Any, state: Any, control: Any, logs: dict[str, Any] | None = None, **_: Any) -> Any:
+            if logs:
+                progress.record_metrics(
+                    dict(logs),
+                    stage="training",
+                    event="log",
+                    step=int(getattr(state, "global_step", 0) or 0),
+                    epoch=getattr(state, "epoch", None),
+                )
+            return control
+
+        def on_evaluate(
+            self,
+            args: Any,
+            state: Any,
+            control: Any,
+            metrics: dict[str, Any] | None = None,
+            **_: Any,
+        ) -> Any:
+            if metrics:
+                progress.record_metrics(
+                    dict(metrics),
+                    stage="evaluation",
+                    event="evaluate",
+                    step=int(getattr(state, "global_step", 0) or 0),
+                    epoch=getattr(state, "epoch", None),
+                )
+            return control
+
+        def on_save(self, args: Any, state: Any, control: Any, **_: Any) -> Any:
+            checkpoint = Path(args.output_dir) / f"checkpoint-{int(getattr(state, 'global_step', 0) or 0)}"
+            backup_path: Path | None = None
+            if checkpoint.exists() and backup_checkpoints:
+                backup_path = backup_artifact(checkpoint, progress.output_dir, name=checkpoint.name)
+            progress.record_metrics(
+                {"global_step": int(getattr(state, "global_step", 0) or 0), "checkpoint_saved": True},
+                stage="checkpoint",
+                event="checkpoint",
+                step=int(getattr(state, "global_step", 0) or 0),
+                epoch=getattr(state, "epoch", None),
+                latest_checkpoint=checkpoint if checkpoint.exists() else None,
+            )
+            if backup_path is not None:
+                progress.write_state(
+                    "running",
+                    "checkpoint",
+                    latest_checkpoint=checkpoint,
+                    details={"checkpoint_backup": str(backup_path)},
+                )
+            return control
+
+        def on_train_end(self, args: Any, state: Any, control: Any, **_: Any) -> Any:
+            latest = resolve_latest_checkpoint(progress.output_dir)
+            progress.write_state(
+                "running",
+                "trained",
+                completed_count=int(getattr(state, "global_step", 0) or 0),
+                total_count=int(getattr(state, "max_steps", 0) or 0) or None,
+                latest_checkpoint=latest,
+            )
+            return control
+
+    return ExperimentProgressCallback()
+
+
 def train_lora_sft(config: LoRATrainingConfig) -> Path:
     """Run LoRA SFT when the optional training stack is installed.
 
@@ -66,6 +159,7 @@ def train_lora_sft(config: LoRATrainingConfig) -> Path:
             DataCollatorForLanguageModeling,
             EarlyStoppingCallback,
             Trainer,
+            TrainerCallback,
             TrainingArguments,
         )
     except ImportError as exc:
@@ -73,6 +167,12 @@ def train_lora_sft(config: LoRATrainingConfig) -> Path:
 
     output_dir = Path(config.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    progress = ProgressLogger(
+        output_dir,
+        resume=config.resume,
+        progress_interval_items=config.progress_interval_items,
+        stage="lora_sft:training",
+    )
     (output_dir / "training_config.json").write_text(
         json.dumps(config.__dict__, ensure_ascii=False, indent=2), encoding="utf-8"
     )
@@ -112,10 +212,12 @@ def train_lora_sft(config: LoRATrainingConfig) -> Path:
         "num_train_epochs": config.epochs,
         "logging_dir": str(output_dir / "logs"),
         "logging_steps": 10,
-        "save_strategy": "epoch",
-        "save_total_limit": 3,
+        "save_strategy": "steps" if config.save_steps is not None else "epoch",
+        "save_total_limit": config.save_total_limit,
         "report_to": [],
     }
+    if config.save_steps is not None:
+        training_kwargs["save_steps"] = int(config.save_steps)
     strategy_name = "eval_strategy" if "eval_strategy" in inspect.signature(TrainingArguments.__init__).parameters else "evaluation_strategy"
     training_kwargs[strategy_name] = "epoch"
     training_args = TrainingArguments(**training_kwargs)
@@ -123,6 +225,13 @@ def train_lora_sft(config: LoRATrainingConfig) -> Path:
     callbacks = []
     if config.early_stopping_patience is not None:
         callbacks.append(EarlyStoppingCallback(early_stopping_patience=config.early_stopping_patience))
+    callbacks.append(
+        _make_trainer_progress_callback(
+            TrainerCallback,
+            progress,
+            backup_checkpoints=config.backup_checkpoints,
+        )
+    )
 
     trainer = Trainer(
         model=model,
@@ -133,20 +242,27 @@ def train_lora_sft(config: LoRATrainingConfig) -> Path:
         data_collator=DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False),
         callbacks=callbacks,
     )
-    trainer.train(resume_from_checkpoint=config.resume_from_checkpoint)
-    trainer.save_model(str(output_dir / "final_adapter"))
-    tokenizer.save_pretrained(str(output_dir / "final_adapter"))
-    if config.backup_weights:
-        backup_dir = output_dir / "backups"
-        backup_dir.mkdir(exist_ok=True)
-        backup_path = backup_dir / "final_adapter_backup"
-        if backup_path.exists():
-            shutil.rmtree(backup_path)
-        shutil.copytree(output_dir / "final_adapter", backup_path)
+    auto_resume_checkpoint = resolve_latest_checkpoint(output_dir) if config.resume else None
+    resume_checkpoint = config.resume_from_checkpoint or (str(auto_resume_checkpoint) if auto_resume_checkpoint else None)
+
+    def save_interrupt_checkpoint() -> Path:
+        salvage = output_dir / "checkpoints" / f"interrupt-{utc_timestamp()}"
+        trainer.save_model(str(salvage))
+        tokenizer.save_pretrained(str(salvage))
+        return salvage
+
+    with InterruptGuard(progress, stage="lora_sft:training", checkpoint_callback=save_interrupt_checkpoint):
+        trainer.train(resume_from_checkpoint=resume_checkpoint)
+    final_adapter = output_dir / "final_adapter"
+    trainer.save_model(str(final_adapter))
+    tokenizer.save_pretrained(str(final_adapter))
+    final_backup = backup_artifact(final_adapter, output_dir, name="final_adapter") if config.backup_weights else None
 
     resume_state = {
         "stage": "trained",
-        "final_adapter": str(output_dir / "final_adapter"),
+        "final_adapter": str(final_adapter),
+        "final_adapter_backup": str(final_backup) if final_backup else None,
+        "latest_checkpoint": str(resolve_latest_checkpoint(output_dir)) if resolve_latest_checkpoint(output_dir) else None,
         "resume_supported": True,
         "weight_backup_required": config.backup_weights,
     }
@@ -163,11 +279,20 @@ def train_lora_sft(config: LoRATrainingConfig) -> Path:
             eval_split=config.eval_split,
             adapter_path=output_dir / "final_adapter",
             final_test_once=False,
+            resume=config.resume,
+            progress_interval_items=config.progress_interval_items,
         )
         (output_dir / "post_train_eval_metrics.json").write_text(
             json.dumps(eval_metrics, ensure_ascii=False, indent=2), encoding="utf-8"
         )
-    return output_dir / "final_adapter"
+    progress.write_state(
+        "completed",
+        "trained",
+        final_artifact=final_adapter,
+        latest_checkpoint=resolve_latest_checkpoint(output_dir),
+        details={"final_adapter_backup": str(final_backup) if final_backup else None},
+    )
+    return final_adapter
 
 
 def main() -> None:
@@ -185,10 +310,15 @@ def main() -> None:
     parser.add_argument("--lora-alpha", type=int, default=16)
     parser.add_argument("--lora-dropout", type=float, default=0.05)
     parser.add_argument("--resume-from-checkpoint")
+    parser.add_argument("--no-resume", action="store_true")
     parser.add_argument("--early-stopping-patience", type=int, default=2)
     parser.add_argument("--no-weight-backup", action="store_true")
+    parser.add_argument("--no-checkpoint-backup", action="store_true")
+    parser.add_argument("--save-steps", type=int)
+    parser.add_argument("--save-total-limit", type=int, default=3)
     parser.add_argument("--eval-metadata")
     parser.add_argument("--eval-split", default="dev")
+    parser.add_argument("--progress-interval-items", type=int, default=1)
     args = parser.parse_args()
     adapter = train_lora_sft(
         LoRATrainingConfig(
@@ -205,10 +335,15 @@ def main() -> None:
             lora_alpha=args.lora_alpha,
             lora_dropout=args.lora_dropout,
             resume_from_checkpoint=args.resume_from_checkpoint,
+            resume=not args.no_resume,
             backup_weights=not args.no_weight_backup,
+            backup_checkpoints=not args.no_checkpoint_backup,
+            save_steps=args.save_steps,
+            save_total_limit=args.save_total_limit,
             early_stopping_patience=args.early_stopping_patience,
             eval_metadata=args.eval_metadata,
             eval_split=args.eval_split,
+            progress_interval_items=args.progress_interval_items,
         )
     )
     print(json.dumps({"final_adapter": str(adapter)}, ensure_ascii=False, indent=2))

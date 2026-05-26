@@ -30,6 +30,12 @@ class KDAblationSweepConfig:
     eval_metadata: str | None = None
     eval_split: str = "dev"
     include_classification_head: bool = True
+    resume: bool = True
+    save_steps: int | None = None
+    save_total_limit: int = 3
+    backup_weights: bool = True
+    backup_checkpoints: bool = True
+    progress_interval_items: int = 1
 
 
 def _ablation_configs(config: KDAblationSweepConfig) -> dict[str, LoRAKDConfig]:
@@ -47,6 +53,12 @@ def _ablation_configs(config: KDAblationSweepConfig) -> dict[str, LoRAKDConfig]:
         lora_r=config.lora_r,
         lora_alpha=config.lora_alpha,
         lora_dropout=config.lora_dropout,
+        resume=config.resume,
+        save_steps=config.save_steps,
+        save_total_limit=config.save_total_limit,
+        backup_weights=config.backup_weights,
+        backup_checkpoints=config.backup_checkpoints,
+        progress_interval_items=config.progress_interval_items,
     )
     return {
         "hard_only_with_rationale": replace(
@@ -104,6 +116,8 @@ def run_kd_ablation_sweep(config: KDAblationSweepConfig) -> dict[str, Any]:
                     adapter_path=adapter,
                     final_test_once=False,
                     experiment_id=f"G3-{name}",
+                    resume=config.resume,
+                    progress_interval_items=config.progress_interval_items,
                 )
                 row["post_train_eval"] = metrics
         runs.append(row)
@@ -130,6 +144,10 @@ def run_kd_ablation_sweep(config: KDAblationSweepConfig) -> dict[str, Any]:
                     dev_min_status=config.dev_min_status,
                     epochs=config.epochs,
                     lambda_soft=config.lambda_soft,
+                    resume=config.resume,
+                    progress_interval_items=config.progress_interval_items,
+                    backup_weights=config.backup_weights,
+                    backup_checkpoints=config.backup_checkpoints,
                 )
             )
             row["status"] = "trained"
@@ -168,8 +186,20 @@ def main() -> None:
     parser.add_argument("--eval-metadata")
     parser.add_argument("--eval-split", default="dev")
     parser.add_argument("--skip-classification-head", dest="include_classification_head", action="store_false")
+    parser.add_argument("--no-resume", action="store_true")
+    parser.add_argument("--save-steps", type=int)
+    parser.add_argument("--save-total-limit", type=int, default=3)
+    parser.add_argument("--no-weight-backup", action="store_true")
+    parser.add_argument("--no-checkpoint-backup", action="store_true")
+    parser.add_argument("--progress-interval-items", type=int, default=1)
     parser.set_defaults(include_classification_head=True)
     args = parser.parse_args()
+    args.resume = not args.no_resume
+    args.backup_weights = not args.no_weight_backup
+    args.backup_checkpoints = not args.no_checkpoint_backup
+    del args.no_resume
+    del args.no_weight_backup
+    del args.no_checkpoint_backup
     result = run_kd_ablation_sweep(KDAblationSweepConfig(**vars(args)))
     print(json.dumps(result, ensure_ascii=False, indent=2))
 

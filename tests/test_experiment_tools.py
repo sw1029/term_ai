@@ -72,6 +72,36 @@ def test_hybrid_policy_uses_cross_encoder_for_middle_confidence(tmp_path: Path):
     assert metrics["cross_encoder_rate"] == 1.0
 
 
+def test_hybrid_policy_resumes_partial_predictions_without_duplicates(tmp_path: Path):
+    primary = tmp_path / "primary.jsonl"
+    fallback = tmp_path / "fallback.jsonl"
+    primary.write_text(
+        "\n".join(
+            [
+                json.dumps({"item_id": "i1", "label": "A", "prediction": "A", "confidence": 0.9}),
+                json.dumps({"item_id": "i2", "label": "B", "prediction": "B", "confidence": 0.9}),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    fallback.write_text("", encoding="utf-8")
+    output = tmp_path / "hybrid_resume"
+    output.mkdir()
+    (output / "prediction_log.partial.jsonl").write_text(
+        json.dumps(
+            {"item_id": "i1", "label": "A", "prediction": "A", "confidence": 0.9, "latency_ms": 1.0},
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    run_hybrid_policy(primary, fallback, output, resume=True)
+    rows = [json.loads(line) for line in (output / "prediction_log.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert [row["item_id"] for row in rows] == ["i1", "i2"]
+
+
 def test_final_test_lock_blocks_second_run(tmp_path: Path):
     output = tmp_path / "runs" / "B0"
     output.mkdir(parents=True)

@@ -9,6 +9,14 @@ from typing import Any
 
 from term_ai.augmentation.sft_builder import candidate_payload_to_sft_record
 from term_ai.contracts import RAW_GT_STATUS, answer_label, iter_jsonl, status_reaches
+from term_ai.experiment.progress import (
+    InterruptGuard,
+    ProgressLogger,
+    backup_artifact,
+    resolve_latest_checkpoint,
+    utc_timestamp,
+)
+from term_ai.experiment.training import _make_trainer_progress_callback
 
 
 @dataclass
@@ -33,6 +41,12 @@ class LoRAKDConfig:
     require_teacher_scores: bool = True
     response_format: str = "json_distribution"
     resume_from_checkpoint: str | None = None
+    resume: bool = True
+    backup_weights: bool = True
+    backup_checkpoints: bool = True
+    save_steps: int | None = None
+    save_total_limit: int = 3
+    progress_interval_items: int = 1
 
 
 def _soft_scores(row: dict[str, Any], answer_idx: int, require_teacher_scores: bool) -> list[float]:
@@ -99,12 +113,18 @@ def train_lora_sft_kd(config: LoRAKDConfig) -> Path:
         import torch.nn.functional as F
         from datasets import Dataset
         from peft import LoraConfig, get_peft_model
-        from transformers import AutoModelForCausalLM, AutoTokenizer, Trainer, TrainingArguments
+        from transformers import AutoModelForCausalLM, AutoTokenizer, Trainer, TrainerCallback, TrainingArguments
     except ImportError as exc:
         raise RuntimeError("Install training dependencies first: pip install -e .[train]") from exc
 
     output_dir = Path(config.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    progress = ProgressLogger(
+        output_dir,
+        resume=config.resume,
+        progress_interval_items=config.progress_interval_items,
+        stage="lora_kd:training",
+    )
     train_rows = metadata_to_kd_rows(
         config.metadata_jsonl,
         min_status=config.min_status,
@@ -211,10 +231,12 @@ def train_lora_sft_kd(config: LoRAKDConfig) -> Path:
         "num_train_epochs": config.epochs,
         "logging_dir": str(output_dir / "logs"),
         "logging_steps": 10,
-        "save_strategy": "epoch",
-        "save_total_limit": 3,
+        "save_strategy": "steps" if config.save_steps is not None else "epoch",
+        "save_total_limit": config.save_total_limit,
         "report_to": [],
     }
+    if config.save_steps is not None:
+        training_kwargs["save_steps"] = int(config.save_steps)
     strategy_name = "eval_strategy" if "eval_strategy" in inspect.signature(TrainingArguments.__init__).parameters else "evaluation_strategy"
     training_kwargs[strategy_name] = "epoch"
     training_args = TrainingArguments(**training_kwargs)
@@ -225,11 +247,29 @@ def train_lora_sft_kd(config: LoRAKDConfig) -> Path:
         eval_dataset=dev_dataset,
         tokenizer=tokenizer,
         data_collator=collate,
+        callbacks=[
+            _make_trainer_progress_callback(
+                TrainerCallback,
+                progress,
+                backup_checkpoints=config.backup_checkpoints,
+            )
+        ],
     )
-    trainer.train(resume_from_checkpoint=config.resume_from_checkpoint)
+    auto_resume_checkpoint = resolve_latest_checkpoint(output_dir) if config.resume else None
+    resume_checkpoint = config.resume_from_checkpoint or (str(auto_resume_checkpoint) if auto_resume_checkpoint else None)
+
+    def save_interrupt_checkpoint() -> Path:
+        salvage = output_dir / "checkpoints" / f"interrupt-{utc_timestamp()}"
+        trainer.save_model(str(salvage))
+        tokenizer.save_pretrained(str(salvage))
+        return salvage
+
+    with InterruptGuard(progress, stage="lora_kd:training", checkpoint_callback=save_interrupt_checkpoint):
+        trainer.train(resume_from_checkpoint=resume_checkpoint)
     final_adapter = output_dir / "final_adapter"
     trainer.save_model(str(final_adapter))
     tokenizer.save_pretrained(str(final_adapter))
+    final_backup = backup_artifact(final_adapter, output_dir, name="final_adapter") if config.backup_weights else None
     (output_dir / "kd_training_config.json").write_text(
         json.dumps(config.__dict__, ensure_ascii=False, indent=2), encoding="utf-8"
     )
@@ -244,9 +284,18 @@ def train_lora_sft_kd(config: LoRAKDConfig) -> Path:
         "hard_label_only": config.hard_label_only,
         "include_rationale": config.include_rationale,
         "response_format": config.response_format,
+        "latest_checkpoint": str(resolve_latest_checkpoint(output_dir)) if resolve_latest_checkpoint(output_dir) else None,
+        "final_adapter_backup": str(final_backup) if final_backup else None,
     }
     (output_dir / "g3_checkpoint_manifest.json").write_text(
         json.dumps(checkpoint_manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    progress.write_state(
+        "completed",
+        "trained",
+        final_artifact=final_adapter,
+        latest_checkpoint=resolve_latest_checkpoint(output_dir),
+        details={"final_adapter_backup": str(final_backup) if final_backup else None},
     )
     return final_adapter
 
@@ -275,7 +324,19 @@ def main() -> None:
     parser.set_defaults(require_teacher_scores=True)
     parser.add_argument("--response-format", choices=["json_distribution", "letter_reason"], default="json_distribution")
     parser.add_argument("--resume-from-checkpoint")
+    parser.add_argument("--no-resume", action="store_true")
+    parser.add_argument("--no-weight-backup", action="store_true")
+    parser.add_argument("--no-checkpoint-backup", action="store_true")
+    parser.add_argument("--save-steps", type=int)
+    parser.add_argument("--save-total-limit", type=int, default=3)
+    parser.add_argument("--progress-interval-items", type=int, default=1)
     args = parser.parse_args()
+    args.resume = not args.no_resume
+    args.backup_weights = not args.no_weight_backup
+    args.backup_checkpoints = not args.no_checkpoint_backup
+    del args.no_resume
+    del args.no_weight_backup
+    del args.no_checkpoint_backup
     adapter = train_lora_sft_kd(LoRAKDConfig(**vars(args)))
     print(json.dumps({"final_adapter": str(adapter)}, ensure_ascii=False, indent=2))
 

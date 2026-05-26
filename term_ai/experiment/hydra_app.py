@@ -81,6 +81,8 @@ def main(cfg: DictConfig) -> None:
         min_status = _default_min_status(cfg, experiment_id)
         final_test_once = bool(cfg.evaluation.final_test_once) and not bool(cfg.execution.allow_repeat_test)
         test_lock_dir = _value(cfg.execution.test_lock_dir)
+        execution_resume = bool(cfg.execution.resume)
+        progress_interval_items = int(cfg.logging.progress_interval_items)
 
         if experiment_id in {"B0", "B1", "B2"}:
             from term_ai.experiment.baselines import run_baseline
@@ -95,6 +97,9 @@ def main(cfg: DictConfig) -> None:
                 train_metadata_path=cfg.execution.train_metadata,
                 final_test_once=final_test_once,
                 test_lock_dir=test_lock_dir,
+                resume=execution_resume,
+                progress_interval_items=progress_interval_items,
+                backup_weights=bool(cfg.training.weight_backup),
             )
         elif experiment_id == "B3":
             from term_ai.experiment.reranker import run_reranker
@@ -113,6 +118,12 @@ def main(cfg: DictConfig) -> None:
                 threshold_split=str(reranker_cfg.threshold_split),
                 final_test_once=final_test_once,
                 test_lock_dir=test_lock_dir,
+                resume=execution_resume,
+                progress_interval_items=progress_interval_items,
+                save_steps=_value(cfg.training.save_steps),
+                save_total_limit=int(cfg.training.save_total_limit),
+                backup_weights=bool(cfg.training.weight_backup),
+                backup_checkpoints=bool(cfg.training.backup_checkpoints),
             )
         elif experiment_id == "B4":
             from term_ai.experiment.api_recheck import run_api_recheck
@@ -137,6 +148,8 @@ def main(cfg: DictConfig) -> None:
                 pricing_path=_value(api_cfg.pricing_path),
                 final_test_once=final_test_once,
                 test_lock_dir=test_lock_dir,
+                resume=execution_resume,
+                progress_interval_items=progress_interval_items,
             )
         elif experiment_id.startswith("G0"):
             from term_ai.experiment.lm_eval import run_hf_zero_shot
@@ -155,6 +168,8 @@ def main(cfg: DictConfig) -> None:
                 experiment_id=experiment_id,
                 test_lock_dir=test_lock_dir,
                 local_cost_per_hour_usd=float(cfg.execution.local_cost_per_hour_usd),
+                resume=execution_resume,
+                progress_interval_items=progress_interval_items,
             )
         elif experiment_id in {"G1-Gemma", "G1-Qwen", "G2-Gemma", "G2-Qwen"}:
             from term_ai.experiment.training import LoRATrainingConfig, train_lora_sft
@@ -177,9 +192,14 @@ def main(cfg: DictConfig) -> None:
                     lora_r=int(cfg.training.lora.r),
                     lora_alpha=int(cfg.training.lora.alpha),
                     lora_dropout=float(cfg.training.lora.dropout),
+                    resume=bool(cfg.training.resume),
                     backup_weights=bool(cfg.training.weight_backup),
+                    backup_checkpoints=bool(cfg.training.backup_checkpoints),
+                    save_steps=_value(cfg.training.save_steps),
+                    save_total_limit=int(cfg.training.save_total_limit),
                     eval_metadata=metadata,
                     eval_split=eval_split,
+                    progress_interval_items=progress_interval_items,
                 )
             )
             result = {"final_adapter": str(adapter)}
@@ -204,6 +224,12 @@ def main(cfg: DictConfig) -> None:
                     include_rationale=bool(cfg.training.kd.include_rationale),
                     require_teacher_scores=bool(cfg.training.kd.require_teacher_scores),
                     response_format=str(cfg.training.kd.response_format),
+                    resume=bool(cfg.training.resume),
+                    backup_weights=bool(cfg.training.weight_backup),
+                    backup_checkpoints=bool(cfg.training.backup_checkpoints),
+                    save_steps=_value(cfg.training.save_steps),
+                    save_total_limit=int(cfg.training.save_total_limit),
+                    progress_interval_items=progress_interval_items,
                 )
             )
             result = {"final_adapter": str(adapter)}
@@ -226,6 +252,8 @@ def main(cfg: DictConfig) -> None:
                 final_test_once=final_test_once,
                 test_lock_dir=test_lock_dir,
                 local_cost_per_hour_usd=float(cfg.execution.local_cost_per_hour_usd),
+                resume=execution_resume,
+                progress_interval_items=progress_interval_items,
             )
         elif experiment_id == "E1":
             from term_ai.experiment.kd_scorer import train_kd_scorer
@@ -238,6 +266,10 @@ def main(cfg: DictConfig) -> None:
                 final_test_once=final_test_once,
                 test_lock_dir=test_lock_dir,
                 require_teacher_scores=bool(cfg.training.kd.require_teacher_scores),
+                resume=bool(cfg.training.resume),
+                progress_interval_items=progress_interval_items,
+                backup_weights=bool(cfg.training.weight_backup),
+                backup_checkpoints=bool(cfg.training.backup_checkpoints),
             )
         elif experiment_id == "H1":
             from term_ai.experiment.hybrid import run_hybrid_policy, tune_hybrid_policy
@@ -255,6 +287,8 @@ def main(cfg: DictConfig) -> None:
                     primary_cost_per_1000=float(hybrid_cfg.primary_cost_per_1000),
                     cross_encoder_cost_per_1000=float(hybrid_cfg.cross_encoder_cost_per_1000),
                     fallback_cost_per_1000=float(hybrid_cfg.fallback_cost_per_1000),
+                    resume=execution_resume,
+                    progress_interval_items=progress_interval_items,
                 )
             else:
                 result = run_hybrid_policy(
@@ -267,6 +301,8 @@ def main(cfg: DictConfig) -> None:
                     primary_cost_per_1000=float(hybrid_cfg.primary_cost_per_1000),
                     cross_encoder_cost_per_1000=float(hybrid_cfg.cross_encoder_cost_per_1000),
                     fallback_cost_per_1000=float(hybrid_cfg.fallback_cost_per_1000),
+                    resume=execution_resume,
+                    progress_interval_items=progress_interval_items,
                 )
         else:
             raise ValueError(f"Hydra runner for {experiment_id} is not implemented")

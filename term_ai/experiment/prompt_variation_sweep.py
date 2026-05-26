@@ -26,6 +26,12 @@ class PromptVariationSweepConfig:
     lora_r: int = 8
     lora_alpha: int = 16
     lora_dropout: float = 0.05
+    resume: bool = True
+    save_steps: int | None = None
+    save_total_limit: int = 3
+    backup_weights: bool = True
+    backup_checkpoints: bool = True
+    progress_interval_items: int = 1
 
 
 def _variant_path(source_jsonl: str | Path, variant_dir: Path, variant: str) -> Path:
@@ -69,8 +75,14 @@ def run_prompt_variation_sweep(config: PromptVariationSweepConfig) -> dict[str, 
                     lora_r=config.lora_r,
                     lora_alpha=config.lora_alpha,
                     lora_dropout=config.lora_dropout,
+                    resume=config.resume,
+                    save_steps=config.save_steps,
+                    save_total_limit=config.save_total_limit,
+                    backup_weights=config.backup_weights,
+                    backup_checkpoints=config.backup_checkpoints,
                     eval_metadata=config.eval_metadata,
                     eval_split=config.eval_split,
+                    progress_interval_items=config.progress_interval_items,
                 )
             )
             row["status"] = "trained"
@@ -110,7 +122,19 @@ def main() -> None:
     parser.add_argument("--lora-r", type=int, default=8)
     parser.add_argument("--lora-alpha", type=int, default=16)
     parser.add_argument("--lora-dropout", type=float, default=0.05)
+    parser.add_argument("--no-resume", action="store_true")
+    parser.add_argument("--save-steps", type=int)
+    parser.add_argument("--save-total-limit", type=int, default=3)
+    parser.add_argument("--no-weight-backup", action="store_true")
+    parser.add_argument("--no-checkpoint-backup", action="store_true")
+    parser.add_argument("--progress-interval-items", type=int, default=1)
     args = parser.parse_args()
+    args.resume = not args.no_resume
+    args.backup_weights = not args.no_weight_backup
+    args.backup_checkpoints = not args.no_checkpoint_backup
+    del args.no_resume
+    del args.no_weight_backup
+    del args.no_checkpoint_backup
     result = run_prompt_variation_sweep(PromptVariationSweepConfig(**vars(args)))
     print(json.dumps(result, ensure_ascii=False, indent=2))
 

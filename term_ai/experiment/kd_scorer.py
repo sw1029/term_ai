@@ -7,11 +7,17 @@ from typing import Any
 
 import numpy as np
 
-from term_ai.contracts import answer_label, write_jsonl
+from term_ai.contracts import answer_label
 from term_ai.experiment.baselines import _item_features, _load_embedder
 from term_ai.experiment.metrics import summarize_predictions
 from term_ai.experiment.mcq import MCQItem, load_mcq_items, prediction_row
 from term_ai.experiment.ops import memory_snapshot, timed
+from term_ai.experiment.progress import (
+    InterruptGuard,
+    ProgressLogger,
+    backup_artifact,
+    resolve_latest_epoch_checkpoint,
+)
 from term_ai.experiment.test_lock import enforce_final_test_once
 
 
@@ -47,10 +53,11 @@ def train_kd_scorer(
     final_test_once: bool = True,
     test_lock_dir: str | Path | None = None,
     require_teacher_scores: bool = True,
+    resume: bool = True,
+    progress_interval_items: int = 1,
+    backup_weights: bool = True,
+    backup_checkpoints: bool = True,
 ) -> dict[str, Any]:
-    import torch
-    import torch.nn.functional as F
-
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
     enforce_final_test_once(output, "E1", eval_split, enabled=final_test_once, lock_dir=test_lock_dir)
@@ -64,51 +71,123 @@ def train_kd_scorer(
         raise ValueError("no train items for KD scorer; check min_status and teacher_scores")
     if not eval_items:
         raise ValueError("no eval items for KD scorer; check eval_split, min_status, and teacher_scores")
+    progress = ProgressLogger(
+        output,
+        resume=resume,
+        progress_interval_items=progress_interval_items,
+        stage="E1:kd_scorer",
+        total_count=len(eval_items),
+    )
+    completed_metrics = progress.completed_metrics_if_available(item.item_id for item in eval_items)
+    if completed_metrics is not None:
+        return completed_metrics
+    import torch
+    import torch.nn.functional as F
+
     embedder = _load_embedder(embedding_model)
 
     sample_features = _item_features(embedder, train_items[0])
     scorer = TorchMLPScorer(input_dim=sample_features.shape[1]).model
     optimizer = torch.optim.AdamW(scorer.parameters(), lr=1e-3)
+    checkpoint_dir = output / "checkpoints"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    final_model = output / "kd_scorer.pt"
+    start_epoch = 0
+    if resume and final_model.exists():
+        saved = torch.load(final_model, map_location="cpu")
+        scorer.load_state_dict(saved["state_dict"])
+        start_epoch = epochs
+    elif resume:
+        latest = resolve_latest_epoch_checkpoint(output, "kd_scorer")
+        if latest is not None:
+            saved = torch.load(latest, map_location="cpu")
+            scorer.load_state_dict(saved["state_dict"])
+            if "optimizer_state_dict" in saved:
+                optimizer.load_state_dict(saved["optimizer_state_dict"])
+            start_epoch = int(saved.get("epoch", 0))
 
-    for _ in range(epochs):
-        for item in train_items:
-            features = torch.tensor(_item_features(embedder, item), dtype=torch.float32)
-            logits = scorer(features).squeeze(-1)
-            hard = torch.tensor([item.answer_idx], dtype=torch.long)
-            soft = torch.tensor(_soft_targets(item), dtype=torch.float32)
-            hard_loss = F.cross_entropy(logits.unsqueeze(0), hard)
-            soft_loss = F.kl_div(F.log_softmax(logits, dim=0), soft, reduction="batchmean")
-            correct = logits[item.answer_idx]
-            mask = torch.ones_like(logits, dtype=torch.bool)
-            mask[item.answer_idx] = False
-            margin_loss = torch.clamp(0.25 - (correct - logits[mask].max()), min=0.0)
-            loss = hard_loss + lambda_soft * soft_loss + mu_margin * margin_loss
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+    def latest_checkpoint() -> Path | None:
+        return resolve_latest_epoch_checkpoint(output, "kd_scorer")
 
-    predictions: list[dict[str, Any]] = []
-    for item in eval_items:
-        with timed() as state:
-            features = torch.tensor(_item_features(embedder, item), dtype=torch.float32)
-            with torch.no_grad():
+    with InterruptGuard(progress, stage="E1:training", checkpoint_callback=latest_checkpoint):
+        for epoch in range(start_epoch, epochs):
+            losses: list[float] = []
+            for item in train_items:
+                features = torch.tensor(_item_features(embedder, item), dtype=torch.float32)
                 logits = scorer(features).squeeze(-1)
-                probs = torch.softmax(logits, dim=0).detach().cpu().numpy()
-        idx = int(np.argmax(probs))
-        predictions.append(
-            prediction_row(
-                item,
-                answer_label(idx),
-                float(probs[idx]),
-                latency_ms=state["latency_ms"],
-                extra=memory_snapshot(),
+                hard = torch.tensor([item.answer_idx], dtype=torch.long)
+                soft = torch.tensor(_soft_targets(item), dtype=torch.float32)
+                hard_loss = F.cross_entropy(logits.unsqueeze(0), hard)
+                soft_loss = F.kl_div(F.log_softmax(logits, dim=0), soft, reduction="batchmean")
+                correct = logits[item.answer_idx]
+                mask = torch.ones_like(logits, dtype=torch.bool)
+                mask[item.answer_idx] = False
+                margin_loss = torch.clamp(0.25 - (correct - logits[mask].max()), min=0.0)
+                loss = hard_loss + lambda_soft * soft_loss + mu_margin * margin_loss
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                losses.append(float(loss.detach().cpu()))
+            checkpoint_path = checkpoint_dir / f"kd_scorer_epoch_{epoch + 1}.pt"
+            torch.save(
+                {
+                    "epoch": epoch + 1,
+                    "state_dict": scorer.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "embedding_model": embedding_model,
+                    "config": {
+                        "lambda_soft": lambda_soft,
+                        "mu_margin": mu_margin,
+                        "min_status": min_status,
+                    },
+                },
+                checkpoint_path,
             )
-        )
+            if backup_checkpoints:
+                backup_artifact(checkpoint_path, output, name=f"kd_scorer_epoch_{epoch + 1}")
+            progress.record_metrics(
+                {
+                    "epoch": epoch + 1,
+                    "train_loss": sum(losses) / len(losses) if losses else 0.0,
+                    "completed_epochs": epoch + 1,
+                    "total_epochs": epochs,
+                },
+                stage="E1:training",
+                event="epoch",
+                epoch=epoch + 1,
+                latest_checkpoint=checkpoint_path,
+            )
 
-    torch.save({"state_dict": scorer.state_dict(), "embedding_model": embedding_model}, output / "kd_scorer.pt")
+    with InterruptGuard(progress, stage="E1:eval", checkpoint_callback=latest_checkpoint):
+        for item in eval_items:
+            if progress.has_prediction(item.item_id):
+                continue
+            with timed() as state:
+                features = torch.tensor(_item_features(embedder, item), dtype=torch.float32)
+                with torch.no_grad():
+                    logits = scorer(features).squeeze(-1)
+                    probs = torch.softmax(logits, dim=0).detach().cpu().numpy()
+            idx = int(np.argmax(probs))
+            progress.append_prediction(
+                prediction_row(
+                    item,
+                    answer_label(idx),
+                    float(probs[idx]),
+                    latency_ms=state["latency_ms"],
+                    extra=memory_snapshot(),
+                )
+            )
+
+    predictions = progress.predictions_for_items(item.item_id for item in eval_items)
+    torch.save({"state_dict": scorer.state_dict(), "embedding_model": embedding_model}, final_model)
+    final_backup = backup_artifact(final_model, output, name="kd_scorer") if backup_weights else None
     metrics = summarize_predictions(predictions)
-    write_jsonl(output / "prediction_log.jsonl", predictions)
-    (output / "metric_log.json").write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
+    progress.finalize_predictions(
+        metrics,
+        predictions,
+        final_artifact=final_model,
+        details={"final_backup": str(final_backup) if final_backup else None},
+    )
     return metrics
 
 
@@ -126,6 +205,10 @@ def main() -> None:
     parser.add_argument("--test-lock-dir")
     parser.add_argument("--allow-missing-teacher-scores", action="store_true")
     parser.add_argument("--allow-repeat-test", action="store_true")
+    parser.add_argument("--no-resume", action="store_true")
+    parser.add_argument("--progress-interval-items", type=int, default=1)
+    parser.add_argument("--no-weight-backup", action="store_true")
+    parser.add_argument("--no-checkpoint-backup", action="store_true")
     args = parser.parse_args()
     metrics = train_kd_scorer(
         metadata_path=args.metadata,
@@ -140,6 +223,10 @@ def main() -> None:
         final_test_once=not args.allow_repeat_test,
         test_lock_dir=args.test_lock_dir,
         require_teacher_scores=not args.allow_missing_teacher_scores,
+        resume=not args.no_resume,
+        progress_interval_items=args.progress_interval_items,
+        backup_weights=not args.no_weight_backup,
+        backup_checkpoints=not args.no_checkpoint_backup,
     )
     print(json.dumps(metrics, ensure_ascii=False, indent=2))
 

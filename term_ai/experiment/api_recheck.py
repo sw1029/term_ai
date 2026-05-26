@@ -8,11 +8,12 @@ from pathlib import Path
 import time
 from typing import Any
 
-from term_ai.contracts import RAW_GT_STATUS, normalize_openai_model_id, write_jsonl
+from term_ai.contracts import RAW_GT_STATUS, normalize_openai_model_id
 from term_ai.env import load_key_value_env, resolve_openai_api_key
 from term_ai.experiment.metrics import summarize_predictions
 from term_ai.experiment.mcq import load_mcq_items, parse_answer_letter, prediction_row
 from term_ai.experiment.ops import memory_snapshot, timed
+from term_ai.experiment.progress import InterruptGuard, ProgressLogger
 from term_ai.experiment.test_lock import enforce_final_test_once
 
 
@@ -177,6 +178,8 @@ def run_api_recheck(
     fallback_only: bool = True,
     final_test_once: bool = True,
     test_lock_dir: str | Path | None = None,
+    resume: bool = True,
+    progress_interval_items: int = 1,
 ) -> dict[str, Any]:
     if requests_per_second <= 0:
         raise ValueError("requests_per_second must be positive")
@@ -197,6 +200,16 @@ def run_api_recheck(
         ]
     if limit is not None:
         items = items[:limit]
+    progress = ProgressLogger(
+        output,
+        resume=resume,
+        progress_interval_items=progress_interval_items,
+        stage="B4:api_recheck",
+        total_count=len(items),
+    )
+    completed_metrics = progress.completed_metrics_if_available(item.item_id for item in items)
+    if completed_metrics is not None:
+        return completed_metrics
     client = LLMRecheckClient(
         provider=provider,
         model=model,
@@ -211,49 +224,51 @@ def run_api_recheck(
         output_cost_per_1m_tokens = pricing_output
     min_interval = 1.0 / requests_per_second
     last_request_at: float | None = None
-    predictions: list[dict[str, Any]] = []
-    total_cost = 0.0
 
-    for item in items:
-        if last_request_at is not None:
-            elapsed = time.monotonic() - last_request_at
-            if elapsed < min_interval:
-                time.sleep(min_interval - elapsed)
-        with timed() as state:
-            last_request_at = time.monotonic()
-            result = client.generate_json_with_usage(item.prompt())
-        answer, confidence = parse_answer_letter(json.dumps(result.payload, ensure_ascii=False))
-        usage_cost = (
-            result.prompt_tokens / 1_000_000 * input_cost_per_1m_tokens
-            + result.completion_tokens / 1_000_000 * output_cost_per_1m_tokens
-        )
-        manual_cost = cost_per_1000_questions / 1000 if cost_per_1000_questions and not usage_cost else 0.0
-        estimated_cost = usage_cost + manual_cost
-        total_cost += estimated_cost
-        predictions.append(
-            prediction_row(
-                item,
-                answer or "PARSE_ERROR",
-                confidence if confidence is not None else 0.0,
-                latency_ms=state["latency_ms"],
-                extra={
-                    "parse_error": answer is None,
-                    "raw_response": result.payload if result.payload else result.raw_text,
-                    "provider": provider,
-                    "model": client.model,
-                    "prompt_tokens": result.prompt_tokens,
-                    "completion_tokens": result.completion_tokens,
-                    "total_tokens": result.total_tokens,
-                    "estimated_cost_usd": estimated_cost,
-                    "cost_source": "token_usage" if usage_cost else "manual_per_question" if manual_cost else pricing_source,
-                    "fallback_reason": "api_recheck",
-                    "primary_confidence": (primary_predictions.get(item.item_id) or {}).get("confidence"),
-                    **memory_snapshot(),
-                },
+    with InterruptGuard(progress, stage="B4:api_recheck"):
+        for item in items:
+            if progress.has_prediction(item.item_id):
+                continue
+            if last_request_at is not None:
+                elapsed = time.monotonic() - last_request_at
+                if elapsed < min_interval:
+                    time.sleep(min_interval - elapsed)
+            with timed() as state:
+                last_request_at = time.monotonic()
+                result = client.generate_json_with_usage(item.prompt())
+            answer, confidence = parse_answer_letter(json.dumps(result.payload, ensure_ascii=False))
+            usage_cost = (
+                result.prompt_tokens / 1_000_000 * input_cost_per_1m_tokens
+                + result.completion_tokens / 1_000_000 * output_cost_per_1m_tokens
             )
-        )
+            manual_cost = cost_per_1000_questions / 1000 if cost_per_1000_questions and not usage_cost else 0.0
+            estimated_cost = usage_cost + manual_cost
+            progress.append_prediction(
+                prediction_row(
+                    item,
+                    answer or "PARSE_ERROR",
+                    confidence if confidence is not None else 0.0,
+                    latency_ms=state["latency_ms"],
+                    extra={
+                        "parse_error": answer is None,
+                        "raw_response": result.payload if result.payload else result.raw_text,
+                        "provider": provider,
+                        "model": client.model,
+                        "prompt_tokens": result.prompt_tokens,
+                        "completion_tokens": result.completion_tokens,
+                        "total_tokens": result.total_tokens,
+                        "estimated_cost_usd": estimated_cost,
+                        "cost_source": "token_usage" if usage_cost else "manual_per_question" if manual_cost else pricing_source,
+                        "fallback_reason": "api_recheck",
+                        "primary_confidence": (primary_predictions.get(item.item_id) or {}).get("confidence"),
+                        **memory_snapshot(),
+                    },
+                )
+            )
 
+    predictions = progress.predictions_for_items(item.item_id for item in items)
     metrics = summarize_predictions(predictions)
+    total_cost = sum(float(row.get("estimated_cost_usd", 0.0)) for row in predictions)
     if total_cost > 0:
         metrics["total_estimated_cost_usd"] = total_cost
         metrics["cost_per_1000_questions"] = total_cost / max(1, len(predictions)) * 1000
@@ -264,8 +279,11 @@ def run_api_recheck(
     metrics["fallback_only"] = fallback_only
     metrics["fallback_rate"] = len(predictions) / len(all_items) if all_items else 0.0
     metrics["pricing_source"] = pricing_source
-    write_jsonl(output / "prediction_log.jsonl", predictions)
-    (output / "metric_log.json").write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
+    progress.finalize_predictions(
+        metrics,
+        predictions,
+        details={"provider": provider, "model": client.model, "pricing_source": pricing_source},
+    )
     return metrics
 
 
@@ -291,6 +309,8 @@ def main() -> None:
     parser.add_argument("--test-lock-dir")
     parser.add_argument("--all-items", action="store_true")
     parser.add_argument("--allow-repeat-test", action="store_true")
+    parser.add_argument("--no-resume", action="store_true")
+    parser.add_argument("--progress-interval-items", type=int, default=1)
     args = parser.parse_args()
     metrics = run_api_recheck(
         args.metadata,
@@ -313,6 +333,8 @@ def main() -> None:
         fallback_only=not args.all_items,
         final_test_once=not args.allow_repeat_test,
         test_lock_dir=args.test_lock_dir,
+        resume=not args.no_resume,
+        progress_interval_items=args.progress_interval_items,
     )
     print(json.dumps(metrics, ensure_ascii=False, indent=2))
 

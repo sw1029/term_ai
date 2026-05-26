@@ -7,6 +7,7 @@ from typing import Any
 
 from term_ai.contracts import RAW_GT_STATUS
 from term_ai.experiment.lm_eval import run_hf_zero_shot
+from term_ai.experiment.progress import atomic_write_json, load_json
 from term_ai.experiment.test_lock import enforce_final_test_once
 
 
@@ -97,6 +98,8 @@ def compare_quantization(
     final_test_once: bool = True,
     test_lock_dir: str | Path | None = None,
     local_cost_per_hour_usd: float = 0.0,
+    resume: bool = True,
+    progress_interval_items: int = 1,
 ) -> dict[str, Any]:
     checkpoint_validation = validate_g3_adapter_checkpoint(
         adapter_path,
@@ -107,8 +110,16 @@ def compare_quantization(
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
     enforce_final_test_once(output, "G4", eval_split, enabled=final_test_once, lock_dir=test_lock_dir)
-    results: dict[str, Any] = {}
+    final_compare = output / "quantization_compare.json"
+    if resume:
+        completed = load_json(final_compare)
+        if completed is not None:
+            return completed
+    partial_compare = output / "quantization_compare.partial.json"
+    results: dict[str, Any] = load_json(partial_compare) if resume else {}
     for mode in ("fp16", "8bit", "4bit"):
+        if mode in results:
+            continue
         results[mode] = run_hf_zero_shot(
             metadata_path=metadata_path,
             output_dir=output / mode,
@@ -121,12 +132,13 @@ def compare_quantization(
             final_test_once=False,
             experiment_id=f"G4-{mode}",
             local_cost_per_hour_usd=local_cost_per_hour_usd,
+            resume=resume,
+            progress_interval_items=progress_interval_items,
         )
         results[mode]["g3_checkpoint_id"] = g3_checkpoint_id or str(adapter)
         results[mode]["g3_checkpoint_validation"] = checkpoint_validation
-    (output / "quantization_compare.json").write_text(
-        json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+        atomic_write_json(partial_compare, results)
+    atomic_write_json(final_compare, results)
     return results
 
 
@@ -144,6 +156,8 @@ def main() -> None:
     parser.add_argument("--local-cost-per-hour-usd", type=float, default=0.0)
     parser.add_argument("--test-lock-dir")
     parser.add_argument("--allow-repeat-test", action="store_true")
+    parser.add_argument("--no-resume", action="store_true")
+    parser.add_argument("--progress-interval-items", type=int, default=1)
     args = parser.parse_args()
     results = compare_quantization(
         metadata_path=args.metadata,
@@ -158,6 +172,8 @@ def main() -> None:
         final_test_once=not args.allow_repeat_test,
         test_lock_dir=args.test_lock_dir,
         local_cost_per_hour_usd=args.local_cost_per_hour_usd,
+        resume=not args.no_resume,
+        progress_interval_items=args.progress_interval_items,
     )
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
