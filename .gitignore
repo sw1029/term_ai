@@ -9,3 +9,4 @@ outputs/
 runs/
 .venv
 *.log
+*.ps1

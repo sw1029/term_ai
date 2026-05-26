@@ -95,6 +95,7 @@ try {
         }
         $judgeProc.Refresh()
     }
+    $judgeProc.WaitForExit()
     $judgeProc.Refresh()
 
     $judgeElapsed = (Get-Date) - $judgeStarted
@@ -120,7 +121,7 @@ try {
       -PassThru
 
     Write-Log INFO ("apply-judge pid={0}, stdout={1}, stderr={2}" -f $applyProc.Id, $applyStdout, $applyStderr)
-    Wait-Process -Id $applyProc.Id
+    $applyProc.WaitForExit()
     $applyProc.Refresh()
     $applyElapsed = (Get-Date) - $applyStarted
     $appliedLines = Get-LineCount -Path $AppliedOutput
