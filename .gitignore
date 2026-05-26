@@ -10,3 +10,4 @@ runs/
 .venv
 *.log
 *.ps1
+.ipynb_checkpoints
