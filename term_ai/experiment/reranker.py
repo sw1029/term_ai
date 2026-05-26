@@ -51,6 +51,19 @@ def _score_items(model: Any, items: list[MCQItem], score_normalization: str) -> 
     return scored
 
 
+def _save_cross_encoder_model(model: Any, output_path: str | Path) -> Path:
+    path = Path(output_path)
+    if hasattr(model, "save") and callable(model.save):
+        model.save(str(path))
+    elif hasattr(model, "save_pretrained") and callable(model.save_pretrained):
+        model.save_pretrained(str(path))
+    else:
+        raise RuntimeError("CrossEncoder model does not expose save or save_pretrained")
+    if not path.exists() or (path.is_dir() and not any(path.iterdir())):
+        raise FileNotFoundError(f"reranker fine-tune completed but no model artifact was saved at {path}")
+    return path
+
+
 def tune_reranker_threshold(
     model: Any,
     items: list[MCQItem],
@@ -152,6 +165,7 @@ def run_reranker(
                     if "checkpoint_save_total_limit" in fit_params:
                         fit_kwargs["checkpoint_save_total_limit"] = int(save_total_limit)
                 model.fit(**fit_kwargs)
+                _save_cross_encoder_model(model, final_model_path)
                 if backup_checkpoints and checkpoint_dir is not None and checkpoint_dir.exists():
                     backup_artifact(checkpoint_dir, output, name="reranker_checkpoints")
                 if backup_weights:

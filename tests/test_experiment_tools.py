@@ -1,5 +1,7 @@
 import json
 from pathlib import Path
+import sys
+import types
 
 import pytest
 
@@ -11,6 +13,7 @@ from term_ai.experiment.mcq import parse_answer_letter
 from term_ai.experiment.prompt_variation_sweep import PromptVariationSweepConfig, run_prompt_variation_sweep
 from term_ai.experiment.quantization import validate_g3_adapter_checkpoint
 from term_ai.experiment.reporting import write_final_report_inputs
+from term_ai.experiment.reranker import run_reranker
 from term_ai.experiment.test_lock import enforce_final_test_once
 from term_ai.experiment.workflow import _augmentation_split_totals, _default_phase_jobs
 
@@ -204,6 +207,92 @@ def test_hybrid_policy_tuning_writes_selected_policy(tmp_path: Path):
     metrics = tune_hybrid_policy(primary, fallback, tmp_path / "hybrid", threshold_grid=[0.3, 0.7])
     assert metrics["accuracy"] == 1.0
     assert (tmp_path / "hybrid" / "hybrid_policy_tuning.json").exists()
+
+
+def test_reranker_finetune_saves_model_after_fit(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    saved_paths: list[Path] = []
+
+    class FakeCrossEncoder:
+        def __init__(self, model_name: str) -> None:
+            self.model_name = model_name
+
+        def fit(self, train_dataloader: object, epochs: int = 1, output_path: str | None = None) -> None:
+            assert output_path is not None
+
+        def save(self, output_path: str) -> None:
+            path = Path(output_path)
+            path.mkdir(parents=True, exist_ok=True)
+            (path / "fake_model.json").write_text(json.dumps({"model_name": self.model_name}), encoding="utf-8")
+            saved_paths.append(path)
+
+        def predict(self, pairs: list[tuple[str, str]]) -> list[float]:
+            return [1.0 if idx == 0 else 0.0 for idx, _ in enumerate(pairs)]
+
+    class FakeDataLoader:
+        def __init__(self, dataset: object, shuffle: bool = False, batch_size: int = 1) -> None:
+            self.dataset = dataset
+            self.shuffle = shuffle
+            self.batch_size = batch_size
+
+    sentence_transformers = types.ModuleType("sentence_transformers")
+    sentence_transformers.CrossEncoder = FakeCrossEncoder
+    sentence_transformers.InputExample = lambda texts, label: types.SimpleNamespace(texts=texts, label=label)
+    torch_module = types.ModuleType("torch")
+    torch_module.cuda = types.SimpleNamespace(is_available=lambda: False)
+    torch_utils = types.ModuleType("torch.utils")
+    torch_utils_data = types.ModuleType("torch.utils.data")
+    torch_utils_data.DataLoader = FakeDataLoader
+    monkeypatch.setitem(sys.modules, "sentence_transformers", sentence_transformers)
+    monkeypatch.setitem(sys.modules, "torch", torch_module)
+    monkeypatch.setitem(sys.modules, "torch.utils", torch_utils)
+    monkeypatch.setitem(sys.modules, "torch.utils.data", torch_utils_data)
+
+    metadata = tmp_path / "metadata.jsonl"
+    rows = [
+        {
+            "item_id": "train-1",
+            "status": "raw_gt",
+            "split": "train",
+            "payload": {
+                "task_type": "Raw Meaning Selection",
+                "word": "contract",
+                "meaning_ko": "계약",
+                "context": "",
+                "options": ["contract", "invoice", "audit", "budget"],
+                "answer_idx": 0,
+            },
+        },
+        {
+            "item_id": "dev-1",
+            "status": "raw_gt",
+            "split": "dev",
+            "payload": {
+                "task_type": "Raw Meaning Selection",
+                "word": "contract",
+                "meaning_ko": "계약",
+                "context": "",
+                "options": ["contract", "invoice", "audit", "budget"],
+                "answer_idx": 0,
+            },
+        },
+    ]
+    metadata.write_text("\n".join(json.dumps(row, ensure_ascii=False) for row in rows) + "\n", encoding="utf-8")
+
+    output = tmp_path / "reranker"
+    metrics = run_reranker(
+        metadata,
+        output,
+        fine_tune=True,
+        final_test_once=False,
+        resume=False,
+        backup_weights=True,
+    )
+
+    final_model = output / "reranker_finetuned"
+    assert metrics["fine_tuned"] is True
+    assert final_model in saved_paths
+    assert (final_model / "fake_model.json").exists()
+    assert any(path.name.startswith("reranker_finetuned_") for path in (output / "backups").iterdir())
 
 
 def test_prompt_variation_sweep_writes_variant_matrix_without_training(tmp_path: Path):
