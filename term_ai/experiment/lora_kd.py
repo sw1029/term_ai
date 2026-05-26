@@ -16,7 +16,11 @@ from term_ai.experiment.progress import (
     resolve_latest_checkpoint,
     utc_timestamp,
 )
-from term_ai.experiment.training import _make_trainer_progress_callback
+from term_ai.experiment.training import (
+    _format_chat,
+    _make_trainer_progress_callback,
+    _trainer_tokenizer_kwargs,
+)
 
 
 @dataclass
@@ -153,14 +157,7 @@ def train_lora_sft_kd(config: LoRAKDConfig) -> Path:
     ]
 
     def chat_text(messages: list[dict[str, str]], add_generation_prompt: bool = False) -> str:
-        if hasattr(tokenizer, "apply_chat_template"):
-            return tokenizer.apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=add_generation_prompt,
-            )
-        suffix = "\nassistant:" if add_generation_prompt else ""
-        return "\n".join(f"{message['role']}: {message['content']}" for message in messages) + suffix
+        return _format_chat(tokenizer, {"messages": messages}, add_generation_prompt=add_generation_prompt)
 
     def encode_row(row: dict[str, Any]) -> dict[str, Any]:
         full_text = chat_text(row["messages"], add_generation_prompt=False)
@@ -245,7 +242,7 @@ def train_lora_sft_kd(config: LoRAKDConfig) -> Path:
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=dev_dataset,
-        tokenizer=tokenizer,
+        **_trainer_tokenizer_kwargs(SoftAnswerTrainer, tokenizer),
         data_collator=collate,
         callbacks=[
             _make_trainer_progress_callback(

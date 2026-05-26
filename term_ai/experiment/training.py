@@ -55,11 +55,68 @@ def _read_messages_jsonl(path: str | Path) -> list[dict[str, Any]]:
     return rows
 
 
-def _format_chat(tokenizer: Any, record: dict[str, Any]) -> str:
+def _merge_system_into_first_user(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not messages or messages[0].get("role") != "system":
+        return messages
+    system_content = str(messages[0].get("content", "")).strip()
+    merged: list[dict[str, Any]] = []
+    system_attached = False
+    for message in messages[1:]:
+        if message.get("role") == "user" and not system_attached:
+            content = str(message.get("content", "")).strip()
+            merged.append({
+                **message,
+                "content": f"{system_content}\n\n{content}" if system_content else content,
+            })
+            system_attached = True
+        else:
+            merged.append(message)
+    if not system_attached and system_content:
+        merged.insert(0, {"role": "user", "content": system_content})
+    return merged
+
+
+def _chat_template_rejects_system_role(tokenizer: Any) -> bool:
+    return "System role not supported" in str(getattr(tokenizer, "chat_template", "") or "")
+
+
+def _is_system_role_template_error(exc: Exception) -> bool:
+    return "System role not supported" in str(exc)
+
+
+def _format_chat(tokenizer: Any, record: dict[str, Any], *, add_generation_prompt: bool = False) -> str:
     messages = record["messages"]
     if hasattr(tokenizer, "apply_chat_template"):
-        return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
-    return "\n".join(f"{message['role']}: {message['content']}" for message in messages)
+        template_messages = (
+            _merge_system_into_first_user(messages)
+            if _chat_template_rejects_system_role(tokenizer)
+            else messages
+        )
+        try:
+            return tokenizer.apply_chat_template(
+                template_messages,
+                tokenize=False,
+                add_generation_prompt=add_generation_prompt,
+            )
+        except Exception as exc:
+            if not _is_system_role_template_error(exc):
+                raise
+            return tokenizer.apply_chat_template(
+                _merge_system_into_first_user(messages),
+                tokenize=False,
+                add_generation_prompt=add_generation_prompt,
+            )
+    suffix = "\nassistant:" if add_generation_prompt else ""
+    return "\n".join(f"{message['role']}: {message['content']}" for message in messages) + suffix
+
+
+def _trainer_tokenizer_kwargs(trainer_cls: type, tokenizer: Any) -> dict[str, Any]:
+    parameters = inspect.signature(trainer_cls.__init__).parameters
+    if "processing_class" in parameters:
+        return {"processing_class": tokenizer}
+    if "tokenizer" in parameters:
+        return {"tokenizer": tokenizer}
+    return {}
 
 
 def _make_trainer_progress_callback(
@@ -218,8 +275,20 @@ def train_lora_sft(config: LoRATrainingConfig) -> Path:
     }
     if config.save_steps is not None:
         training_kwargs["save_steps"] = int(config.save_steps)
-    strategy_name = "eval_strategy" if "eval_strategy" in inspect.signature(TrainingArguments.__init__).parameters else "evaluation_strategy"
-    training_kwargs[strategy_name] = "epoch"
+    strategy_name = (
+        "eval_strategy"
+        if "eval_strategy" in inspect.signature(TrainingArguments.__init__).parameters
+        else "evaluation_strategy"
+    )
+    eval_strategy = "epoch"
+    if config.early_stopping_patience is not None:
+        if config.save_steps is not None:
+            eval_strategy = "steps"
+            training_kwargs["eval_steps"] = int(config.save_steps)
+        training_kwargs["load_best_model_at_end"] = True
+        training_kwargs["metric_for_best_model"] = "eval_loss"
+        training_kwargs["greater_is_better"] = False
+    training_kwargs[strategy_name] = eval_strategy
     training_args = TrainingArguments(**training_kwargs)
 
     callbacks = []
@@ -238,7 +307,7 @@ def train_lora_sft(config: LoRATrainingConfig) -> Path:
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=dev_dataset,
-        tokenizer=tokenizer,
+        **_trainer_tokenizer_kwargs(Trainer, tokenizer),
         data_collator=DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False),
         callbacks=callbacks,
     )
