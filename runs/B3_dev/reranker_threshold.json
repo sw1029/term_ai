@@ -1,0 +1,6 @@
+{
+  "threshold": 0.0,
+  "accuracy": 1.0,
+  "coverage": 1.0,
+  "score_normalization": "sigmoid"
+}

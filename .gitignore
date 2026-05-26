@@ -8,9 +8,9 @@ __pycache__/
 *.egg-info/
 data/aug_smoke/
 outputs/
-runs/
 .venv
 *.log
 *.ps1
 .ipynb_checkpoints
 .vscode
+*.pkl
