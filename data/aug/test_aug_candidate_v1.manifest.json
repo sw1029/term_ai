@@ -1,0 +1,15 @@
+{
+  "created_at": "2026-05-26T02:14:58.686020+00:00",
+  "output_path": "data\\aug\\test_aug_candidate_v1.jsonl",
+  "total_requested": 200,
+  "total_written": 200,
+  "task_counts": {
+    "Synonym Selection": 80,
+    "Antonym Selection": 40,
+    "Context Cloze": 50,
+    "Sense Disambiguation": 30
+  },
+  "source_split": "test",
+  "requests_per_second": 1.0,
+  "model": "gpt-5.4-mini"
+}

@@ -10,6 +10,25 @@ from term_ai.augmentation.teacher import OpenAITeacherClient
 from term_ai.contracts import dumps_jsonl, normalize_openai_model_id
 
 
+def load_completed_item_ids(path: str | Path) -> set[str]:
+    output = Path(path)
+    if not output.exists():
+        return set()
+    completed: set[str] = set()
+    with output.open("r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"existing judge output has invalid JSON at line {line_number}: {output}") from exc
+            item_id = row.get("item_id")
+            if item_id:
+                completed.add(str(item_id))
+    return completed
+
+
 def build_judge_prompt(payload: dict[str, Any]) -> str:
     return f"""You are an independent validator for TOEIC business vocabulary MCQ data.
 
@@ -40,6 +59,7 @@ def judge_metadata(
     generator_model: str | None = None,
     enforce_model_separation: bool = True,
     reasoning_effort: str | None = None,
+    resume: bool = False,
 ) -> dict[str, int]:
     if requests_per_second <= 0:
         raise ValueError("requests_per_second must be positive")
@@ -48,12 +68,14 @@ def judge_metadata(
     if enforce_model_separation and generator_model and model == generator_model:
         raise ValueError("judge model must differ from generator model")
     teacher = OpenAITeacherClient(model=model, env_path=str(env_path), reasoning_effort=reasoning_effort)
+    completed_item_ids = load_completed_item_ids(output_path) if resume else set()
     min_interval = 1.0 / requests_per_second
     last_request_at: float | None = None
-    counts = {"written": 0, "accept": 0, "reject": 0}
+    counts = {"written": 0, "accept": 0, "reject": 0, "skipped_existing": 0}
+    output_mode = "a" if resume else "w"
 
     with open(metadata_path, "r", encoding="utf-8") as input_handle, open(
-        output_path, "w", encoding="utf-8", newline="\n"
+        output_path, output_mode, encoding="utf-8", newline="\n"
     ) as output_handle:
         for line in input_handle:
             if not line.strip():
@@ -61,6 +83,10 @@ def judge_metadata(
             if limit is not None and counts["written"] >= limit:
                 break
             row = json.loads(line)
+            item_id = str(row["item_id"])
+            if item_id in completed_item_ids:
+                counts["skipped_existing"] += 1
+                continue
             row_generator = normalize_openai_model_id(str(row.get("generator_model") or generator_model or ""))
             if enforce_model_separation and row_generator and row_generator == model:
                 raise ValueError(f"judge model must differ from generator model for item {row.get('item_id')}")
@@ -70,7 +96,7 @@ def judge_metadata(
                     time.sleep(min_interval - elapsed)
             last_request_at = time.monotonic()
             result = teacher.generate_json(build_judge_prompt(row.get("payload") or {}))
-            result["item_id"] = row["item_id"]
+            result["item_id"] = item_id
             result.setdefault("judge_model", model)
             if reasoning_effort:
                 result.setdefault("judge_reasoning_effort", reasoning_effort)
@@ -91,6 +117,7 @@ def main() -> None:
     parser.add_argument("--limit", type=int)
     parser.add_argument("--generator-model")
     parser.add_argument("--reasoning-effort", choices=["none", "low", "medium", "high", "xhigh"])
+    parser.add_argument("--resume", action="store_true")
     parser.add_argument("--allow-same-model", action="store_true")
     args = parser.parse_args()
     counts = judge_metadata(
@@ -103,6 +130,7 @@ def main() -> None:
         generator_model=args.generator_model,
         enforce_model_separation=not args.allow_same_model,
         reasoning_effort=args.reasoning_effort,
+        resume=args.resume,
     )
     print(json.dumps(counts, ensure_ascii=False, indent=2))
 
