@@ -1,0 +1,19 @@
+{
+  "raw_metadata": "data/metadata/raw_test_mcq_v1.jsonl",
+  "generated_metadata": "data/metadata/test_aug_judge_pass_v1.jsonl",
+  "raw_teacher_scores": "data/metadata/raw_teacher_scores_v1.jsonl",
+  "min_status": "aug_judge_pass",
+  "include_raw": true,
+  "require_raw_teacher_scores": true,
+  "counts": {
+    "raw_written": 1151,
+    "generated_written": 112,
+    "generated_missing_teacher_scores": 0,
+    "raw_missing_teacher_scores": 0,
+    "written": 1263
+  },
+  "notes": [
+    "raw rows are included only when explicit teacher_scores are present or supplied",
+    "generated rows are included only when they pass min_status and carry teacher_scores"
+  ]
+}
