@@ -7,7 +7,7 @@ import pytest
 
 from term_ai.experiment.hybrid import run_hybrid_policy, tune_hybrid_policy
 from term_ai.experiment.kd_sweep import KDAblationSweepConfig, run_kd_ablation_sweep
-from term_ai.experiment.lora_kd import metadata_to_kd_rows
+from term_ai.experiment.lora_kd import LoRAKDConfig, _lora_kd_training_kwargs, metadata_to_kd_rows
 from term_ai.experiment.metrics import summarize_predictions
 from term_ai.experiment.mcq import parse_answer_letter
 from term_ai.experiment.prompt_variation_sweep import PromptVariationSweepConfig, run_prompt_variation_sweep
@@ -179,6 +179,19 @@ def test_lora_kd_view_can_emit_json_distribution(tmp_path: Path):
     assistant = json.loads(rows[0]["messages"][2]["content"])
     assert assistant["answer"] == "A"
     assert assistant["distribution"]["A"] == 0.7
+
+
+def test_lora_kd_training_args_keep_custom_kd_columns(tmp_path: Path):
+    config = LoRAKDConfig(
+        model_name_or_path="local-model",
+        metadata_jsonl="train.jsonl",
+        dev_metadata_jsonl="dev.jsonl",
+        output_dir=str(tmp_path),
+    )
+
+    kwargs = _lora_kd_training_kwargs(config, tmp_path)
+
+    assert kwargs["remove_unused_columns"] is False
 
 
 def test_hybrid_policy_tuning_writes_selected_policy(tmp_path: Path):

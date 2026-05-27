@@ -111,6 +111,26 @@ def metadata_to_kd_rows(
     return rows
 
 
+def _lora_kd_training_kwargs(config: LoRAKDConfig, output_dir: Path) -> dict[str, Any]:
+    training_kwargs = {
+        "output_dir": str(output_dir / "checkpoints"),
+        "per_device_train_batch_size": config.batch_size,
+        "per_device_eval_batch_size": config.batch_size,
+        "gradient_accumulation_steps": config.gradient_accumulation_steps,
+        "learning_rate": config.learning_rate,
+        "num_train_epochs": config.epochs,
+        "logging_dir": str(output_dir / "logs"),
+        "logging_steps": 10,
+        "save_strategy": "steps" if config.save_steps is not None else "epoch",
+        "save_total_limit": config.save_total_limit,
+        "report_to": [],
+        "remove_unused_columns": False,
+    }
+    if config.save_steps is not None:
+        training_kwargs["save_steps"] = int(config.save_steps)
+    return training_kwargs
+
+
 def train_lora_sft_kd(config: LoRAKDConfig) -> Path:
     try:
         import torch
@@ -219,21 +239,7 @@ def train_lora_sft_kd(config: LoRAKDConfig) -> Path:
             task_type="CAUSAL_LM",
         ),
     )
-    training_kwargs = {
-        "output_dir": str(output_dir / "checkpoints"),
-        "per_device_train_batch_size": config.batch_size,
-        "per_device_eval_batch_size": config.batch_size,
-        "gradient_accumulation_steps": config.gradient_accumulation_steps,
-        "learning_rate": config.learning_rate,
-        "num_train_epochs": config.epochs,
-        "logging_dir": str(output_dir / "logs"),
-        "logging_steps": 10,
-        "save_strategy": "steps" if config.save_steps is not None else "epoch",
-        "save_total_limit": config.save_total_limit,
-        "report_to": [],
-    }
-    if config.save_steps is not None:
-        training_kwargs["save_steps"] = int(config.save_steps)
+    training_kwargs = _lora_kd_training_kwargs(config, output_dir)
     strategy_name = "eval_strategy" if "eval_strategy" in inspect.signature(TrainingArguments.__init__).parameters else "evaluation_strategy"
     training_kwargs[strategy_name] = "epoch"
     training_args = TrainingArguments(**training_kwargs)
