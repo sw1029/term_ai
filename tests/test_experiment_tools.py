@@ -11,7 +11,7 @@ from term_ai.experiment.lora_kd import LoRAKDConfig, _lora_kd_training_kwargs, m
 from term_ai.experiment.metrics import summarize_predictions
 from term_ai.experiment.mcq import parse_answer_letter
 from term_ai.experiment.prompt_variation_sweep import PromptVariationSweepConfig, run_prompt_variation_sweep
-from term_ai.experiment.quantization import validate_g3_adapter_checkpoint
+from term_ai.experiment.quantization import compare_quantization, validate_g3_adapter_checkpoint
 from term_ai.experiment.reporting import write_final_report_inputs
 from term_ai.experiment.reranker import run_reranker
 from term_ai.experiment.test_lock import enforce_final_test_once
@@ -371,6 +371,41 @@ def test_g4_adapter_validation_requires_g3_manifest(tmp_path: Path):
     result = validate_g3_adapter_checkpoint(adapter)
     assert result["verified"] is True
     assert result["manifest_type"] == "g3_checkpoint_manifest"
+
+
+def test_g4_compare_quantization_initializes_missing_partial_resume(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    metadata = tmp_path / "metadata.jsonl"
+    metadata.write_text("", encoding="utf-8")
+    adapter = tmp_path / "final_adapter"
+    adapter.mkdir()
+    manifest = {
+        "experiment_family": "G3",
+        "checkpoint_type": "lora_sft_kd",
+        "final_adapter": str(adapter),
+    }
+    (tmp_path / "g3_checkpoint_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    calls: list[str] = []
+
+    def fake_run_hf_zero_shot(**kwargs):
+        calls.append(kwargs["quantization"])
+        return {"quantization": kwargs["quantization"]}
+
+    monkeypatch.setattr("term_ai.experiment.quantization.run_hf_zero_shot", fake_run_hf_zero_shot)
+
+    result = compare_quantization(
+        metadata_path=metadata,
+        output_dir=tmp_path / "g4",
+        model_name_or_path="local-model",
+        adapter_path=adapter,
+        resume=True,
+        final_test_once=False,
+    )
+
+    assert calls == ["fp16", "8bit", "4bit"]
+    assert list(result) == ["fp16", "8bit", "4bit"]
+    assert (tmp_path / "g4" / "quantization_compare.json").exists()
 
 
 def test_ops_summary_includes_batch_cold_start_and_local_cost():

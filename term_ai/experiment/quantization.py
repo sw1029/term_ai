@@ -116,7 +116,13 @@ def compare_quantization(
         if completed is not None:
             return completed
     partial_compare = output / "quantization_compare.partial.json"
-    results: dict[str, Any] = load_json(partial_compare) if resume else {}
+    partial_results = load_json(partial_compare) if resume else None
+    if partial_results is None:
+        results: dict[str, Any] = {}
+    elif not isinstance(partial_results, dict):
+        raise ValueError(f"invalid G4 quantization partial results at {partial_compare}: expected JSON object")
+    else:
+        results = partial_results
     for mode in ("fp16", "8bit", "4bit"):
         if mode in results:
             continue
