@@ -1,0 +1,8 @@
+{
+  "stage": "trained",
+  "final_adapter": "runs/G2_Qwen_dev/final_adapter",
+  "final_adapter_backup": "runs/G2_Qwen_dev/backups/final_adapter_20260527T015113214217Z",
+  "latest_checkpoint": "runs/G2_Qwen_dev/checkpoints/checkpoint-2172",
+  "resume_supported": true,
+  "weight_backup_required": true
+}

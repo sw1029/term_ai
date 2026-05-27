@@ -17,4 +17,11 @@ outputs/
 *model.safetensors
 runs/B3_finetuned_dev/backups/reranker_finetuned_*
 runs/B3_finetuned_dev/reranker_finetuned/*
+!runs/B3_finetuned_dev/reranker_finetuned/README.md
 *.json
+!runs/**/*.json
+runs/**/*.pt
+runs/**/*.pth
+runs/**/*.bin
+runs/**/adapter_model.safetensors
+runs/**/tokenizer.json

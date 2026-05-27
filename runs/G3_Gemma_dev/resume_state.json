@@ -1,0 +1,12 @@
+{
+  "status": "failed",
+  "stage": "lora_kd:training",
+  "completed_count": 0,
+  "total_count": 2172,
+  "latest_checkpoint": "runs/G3_Gemma_dev/checkpoints/interrupt-20260527T015401929034Z",
+  "final_artifact": null,
+  "partial_metrics": null,
+  "reason": "KeyError: 'answer_pos'",
+  "details": {},
+  "updated_at": "2026-05-27T01:54:03.534624+00:00"
+}
