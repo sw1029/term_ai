@@ -168,6 +168,7 @@ def main(cfg: DictConfig) -> None:
                 experiment_id=experiment_id,
                 test_lock_dir=test_lock_dir,
                 local_cost_per_hour_usd=float(cfg.execution.local_cost_per_hour_usd),
+                prompt_mode=str(cfg.execution.prompt_mode),
                 resume=execution_resume,
                 progress_interval_items=progress_interval_items,
             )
@@ -252,6 +253,7 @@ def main(cfg: DictConfig) -> None:
                 final_test_once=final_test_once,
                 test_lock_dir=test_lock_dir,
                 local_cost_per_hour_usd=float(cfg.execution.local_cost_per_hour_usd),
+                prompt_mode=str(cfg.execution.prompt_mode),
                 resume=execution_resume,
                 progress_interval_items=progress_interval_items,
             )

@@ -98,6 +98,7 @@ def compare_quantization(
     final_test_once: bool = True,
     test_lock_dir: str | Path | None = None,
     local_cost_per_hour_usd: float = 0.0,
+    prompt_mode: str = "chat",
     resume: bool = True,
     progress_interval_items: int = 1,
 ) -> dict[str, Any]:
@@ -138,6 +139,7 @@ def compare_quantization(
             final_test_once=False,
             experiment_id=f"G4-{mode}",
             local_cost_per_hour_usd=local_cost_per_hour_usd,
+            prompt_mode=prompt_mode,
             resume=resume,
             progress_interval_items=progress_interval_items,
         )
@@ -160,6 +162,7 @@ def main() -> None:
     parser.add_argument("--g3-checkpoint-id")
     parser.add_argument("--allow-unverified-g3-adapter", action="store_true")
     parser.add_argument("--local-cost-per-hour-usd", type=float, default=0.0)
+    parser.add_argument("--prompt-mode", choices=["chat", "plain"], default="chat")
     parser.add_argument("--test-lock-dir")
     parser.add_argument("--allow-repeat-test", action="store_true")
     parser.add_argument("--no-resume", action="store_true")
@@ -178,6 +181,7 @@ def main() -> None:
         final_test_once=not args.allow_repeat_test,
         test_lock_dir=args.test_lock_dir,
         local_cost_per_hour_usd=args.local_cost_per_hour_usd,
+        prompt_mode=args.prompt_mode,
         resume=not args.no_resume,
         progress_interval_items=args.progress_interval_items,
     )

@@ -54,6 +54,7 @@ execution:
   fallback_predictions: null
   model_name_or_path: null
   adapter_path: null
+  prompt_mode: chat
   limit: null
   local_cost_per_hour_usd: 0.0
   test_lock_dir: runs/_test_locks

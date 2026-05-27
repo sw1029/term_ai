@@ -128,9 +128,11 @@ def raw_anchor_to_sft(anchor: dict[str, Any], options: list[str], answer_idx: in
         + "\n".join(f"{chr(ord('A') + idx)}) {option}" for idx, option in enumerate(options))
     )
     answer = options[answer_idx]
-    assistant = (
-        f"{chr(ord('A') + answer_idx)}) {answer}\n\n"
-        f"원천 anchor에서 {anchor['word']}({anchor['pos']})의 한국어 뜻은 '{answer}'로 기록되어 있습니다."
+    rationale = f"원천 anchor에서 {anchor['word']}({anchor['pos']})의 한국어 뜻은 '{answer}'로 기록되어 있습니다."
+    assistant = json.dumps(
+        {"answer": chr(ord("A") + answer_idx), "confidence": 1.0, "rationale": rationale},
+        ensure_ascii=False,
+        sort_keys=True,
     )
     return make_sft_record(SYSTEM_PROMPT, user, assistant)
 

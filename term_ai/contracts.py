@@ -8,7 +8,8 @@ from typing import Any, Iterable
 
 SYSTEM_PROMPT = (
     "You are a TOEIC business vocabulary expert. "
-    "Answer with the letter and a brief reason in Korean."
+    "Return one valid JSON object first with keys answer and confidence; "
+    "rationale may be included as a short Korean reason."
 )
 
 TASK_SYNONYM = "Synonym Selection"

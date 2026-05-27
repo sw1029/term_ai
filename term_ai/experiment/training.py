@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from term_ai.experiment.mcq import parse_answer_response
 from term_ai.experiment.progress import (
     InterruptGuard,
     ProgressLogger,
@@ -108,6 +109,62 @@ def _format_chat(tokenizer: Any, record: dict[str, Any], *, add_generation_promp
             )
     suffix = "\nassistant:" if add_generation_prompt else ""
     return "\n".join(f"{message['role']}: {message['content']}" for message in messages) + suffix
+
+
+def _json_answer_content(content: str) -> str:
+    parsed = parse_answer_response(content)
+    if parsed.answer is None:
+        return content
+    payload: dict[str, Any] = {"answer": parsed.answer, "confidence": parsed.confidence if parsed.confidence is not None else 1.0}
+    remainder = content.strip()
+    if remainder:
+        payload["rationale"] = remainder
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True)
+
+
+def _normalize_assistant_json_answer(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    normalized = [dict(message) for message in messages]
+    if normalized and normalized[-1].get("role") == "assistant":
+        normalized[-1]["content"] = _json_answer_content(str(normalized[-1].get("content") or ""))
+    return normalized
+
+
+def _tokenize_chat_completion(
+    tokenizer: Any,
+    messages: list[dict[str, Any]],
+    max_length: int,
+    *,
+    normalize_assistant_json: bool = False,
+) -> dict[str, Any]:
+    tokenized_messages = _normalize_assistant_json_answer(messages) if normalize_assistant_json else messages
+    full_text = _format_chat(tokenizer, {"messages": tokenized_messages}, add_generation_prompt=False)
+    prompt_text = _format_chat(tokenizer, {"messages": tokenized_messages[:2]}, add_generation_prompt=True)
+    full = tokenizer(full_text, truncation=True, max_length=max_length)
+    prompt = tokenizer(prompt_text, truncation=True, max_length=max_length)
+    labels = list(full["input_ids"])
+    assistant_start = min(len(prompt["input_ids"]), len(labels))
+    for idx in range(assistant_start):
+        labels[idx] = -100
+    full["labels"] = labels
+    full["assistant_start"] = assistant_start
+    return full
+
+
+def _pad_completion_labels(tokenizer: Any, features: list[dict[str, Any]], max_length: int) -> list[list[int]]:
+    padding_side = str(getattr(tokenizer, "padding_side", "right") or "right")
+    padded: list[list[int]] = []
+    for feature in features:
+        labels = list(feature["labels"])
+        pad_width = max_length - len(labels)
+        if pad_width < 0:
+            labels = labels[:max_length]
+            pad_width = 0
+        if padding_side == "left":
+            labels = [-100] * pad_width + labels
+        else:
+            labels = labels + [-100] * pad_width
+        padded.append(labels)
+    return padded
 
 
 def _trainer_tokenizer_kwargs(trainer_cls: type, tokenizer: Any) -> dict[str, Any]:
@@ -213,7 +270,6 @@ def train_lora_sft(config: LoRATrainingConfig) -> Path:
         from transformers import (
             AutoModelForCausalLM,
             AutoTokenizer,
-            DataCollatorForLanguageModeling,
             EarlyStoppingCallback,
             Trainer,
             TrainerCallback,
@@ -242,10 +298,17 @@ def train_lora_sft(config: LoRATrainingConfig) -> Path:
         tokenizer.pad_token = tokenizer.eos_token
 
     def tokenize_batch(batch: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
-        texts = [_format_chat(tokenizer, {"messages": messages}) for messages in batch["messages"]]
-        encoded = tokenizer(texts, truncation=True, max_length=config.max_length)
-        encoded["labels"] = [ids.copy() for ids in encoded["input_ids"]]
-        return encoded
+        encoded_rows = [
+            _tokenize_chat_completion(
+                tokenizer,
+                messages,
+                config.max_length,
+                normalize_assistant_json=True,
+            )
+            for messages in batch["messages"]
+        ]
+        keys = encoded_rows[0].keys()
+        return {key: [row[key] for row in encoded_rows] for key in keys}
 
     train_dataset = Dataset.from_list(train_rows).map(tokenize_batch, batched=True, remove_columns=["messages"])
     dev_dataset = Dataset.from_list(dev_rows).map(tokenize_batch, batched=True, remove_columns=["messages"])
@@ -302,13 +365,26 @@ def train_lora_sft(config: LoRATrainingConfig) -> Path:
         )
     )
 
+    def collate_completion(features: list[dict[str, Any]]) -> dict[str, Any]:
+        batch = tokenizer.pad(
+            [{"input_ids": feature["input_ids"], "attention_mask": feature["attention_mask"]} for feature in features],
+            return_tensors="pt",
+        )
+        import torch
+
+        batch["labels"] = torch.tensor(
+            _pad_completion_labels(tokenizer, features, int(batch["input_ids"].shape[1])),
+            dtype=torch.long,
+        )
+        return batch
+
     trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=dev_dataset,
         **_trainer_tokenizer_kwargs(Trainer, tokenizer),
-        data_collator=DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False),
+        data_collator=collate_completion,
         callbacks=callbacks,
     )
     auto_resume_checkpoint = resolve_latest_checkpoint(output_dir) if config.resume else None

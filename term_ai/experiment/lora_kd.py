@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import inspect
 import json
 from pathlib import Path
+import re
 from typing import Any
 
 from term_ai.augmentation.sft_builder import candidate_payload_to_sft_record
@@ -19,7 +20,9 @@ from term_ai.experiment.progress import (
 from term_ai.experiment.training import (
     _format_chat,
     _make_trainer_progress_callback,
+    _pad_completion_labels,
     _trainer_tokenizer_kwargs,
+    _tokenize_chat_completion,
 )
 
 
@@ -89,7 +92,10 @@ def metadata_to_kd_rows(
         scores = _soft_scores(row, answer_idx, require_teacher_scores=require_teacher_scores)
         if not include_rationale:
             payload["rationale"] = f"정답은 {answer_label(answer_idx)}입니다."
-        sft = candidate_payload_to_sft_record(payload)
+        sft = candidate_payload_to_sft_record(
+            payload,
+            response_format="letter_reason" if response_format == "letter_reason" else "json_answer",
+        )
         if response_format == "json_distribution":
             label = answer_label(answer_idx)
             assistant: dict[str, Any] = {
@@ -129,6 +135,51 @@ def _lora_kd_training_kwargs(config: LoRAKDConfig, output_dir: Path) -> dict[str
     if config.save_steps is not None:
         training_kwargs["save_steps"] = int(config.save_steps)
     return training_kwargs
+
+
+def _answer_value_char_start(assistant_content: str, expected_label: str) -> int | None:
+    try:
+        parsed = json.loads(assistant_content)
+    except json.JSONDecodeError:
+        parsed = None
+    if isinstance(parsed, dict):
+        parsed_answer = str(parsed.get("answer") or "").strip().upper()
+        if parsed_answer != expected_label:
+            return None
+    for match in re.finditer(r'"answer"\s*:\s*"([ABCD])"', assistant_content, flags=re.IGNORECASE):
+        if match.group(1).upper() == expected_label:
+            return match.start(1)
+    return None
+
+
+def _find_answer_token_position(
+    tokenizer: Any,
+    messages: list[dict[str, Any]],
+    input_ids: list[int],
+    assistant_start: int,
+    answer_idx: int,
+    letter_token_ids: list[int],
+    max_length: int,
+) -> int | None:
+    expected_token_id = int(letter_token_ids[answer_idx])
+    expected_label = answer_label(answer_idx)
+    assistant_content = str(messages[-1].get("content") or "") if messages else ""
+    value_start = _answer_value_char_start(assistant_content, expected_label)
+    if value_start is not None:
+        prefix_messages = [dict(message) for message in messages]
+        prefix_messages[-1]["content"] = assistant_content[:value_start]
+        prefix_text = _format_chat(tokenizer, {"messages": prefix_messages}, add_generation_prompt=False)
+        prefix_ids = tokenizer(prefix_text, truncation=True, max_length=max_length)["input_ids"]
+        window_start = max(int(assistant_start), min(len(prefix_ids) - 2, len(input_ids)))
+        window_stop = min(len(input_ids), max(window_start + 1, len(prefix_ids) + 4))
+        for idx in range(window_start, window_stop):
+            if int(input_ids[idx]) == expected_token_id:
+                return idx
+
+    for idx in range(max(int(assistant_start), 0), len(input_ids)):
+        if int(input_ids[idx]) == expected_token_id:
+            return idx
+    return None
 
 
 def train_lora_sft_kd(config: LoRAKDConfig) -> Path:
@@ -176,19 +227,24 @@ def train_lora_sft_kd(config: LoRAKDConfig) -> Path:
         for idx in range(4)
     ]
 
-    def chat_text(messages: list[dict[str, str]], add_generation_prompt: bool = False) -> str:
-        return _format_chat(tokenizer, {"messages": messages}, add_generation_prompt=add_generation_prompt)
-
     def encode_row(row: dict[str, Any]) -> dict[str, Any]:
-        full_text = chat_text(row["messages"], add_generation_prompt=False)
-        prompt_text = chat_text(row["messages"][:2], add_generation_prompt=True)
-        full = tokenizer(full_text, truncation=True, max_length=config.max_length)
-        prompt = tokenizer(prompt_text, truncation=True, max_length=config.max_length)
-        answer_pos = min(len(prompt["input_ids"]), len(full["input_ids"]) - 1)
-        for idx in range(answer_pos, len(full["input_ids"])):
-            if full["input_ids"][idx] in letter_token_ids:
-                answer_pos = idx
-                break
+        full = _tokenize_chat_completion(
+            tokenizer,
+            row["messages"],
+            config.max_length,
+            normalize_assistant_json=False,
+        )
+        answer_pos = _find_answer_token_position(
+            tokenizer,
+            row["messages"],
+            list(full["input_ids"]),
+            int(full["assistant_start"]),
+            int(row["answer_idx"]),
+            letter_token_ids,
+            config.max_length,
+        )
+        if answer_pos is None:
+            raise ValueError(f"metadata item {row.get('item_id')} has no answer token in assistant JSON")
         full["answer_pos"] = answer_pos
         full["answer_idx"] = int(row["answer_idx"])
         full["teacher_scores"] = row["teacher_scores"]
@@ -202,8 +258,14 @@ def train_lora_sft_kd(config: LoRAKDConfig) -> Path:
             [{"input_ids": feature["input_ids"], "attention_mask": feature["attention_mask"]} for feature in features],
             return_tensors="pt",
         )
-        batch["labels"] = batch["input_ids"].clone()
-        batch["answer_pos"] = torch.tensor([feature["answer_pos"] for feature in features], dtype=torch.long)
+        max_length = int(batch["input_ids"].shape[1])
+        batch["labels"] = torch.tensor(_pad_completion_labels(tokenizer, features, max_length), dtype=torch.long)
+        padding_side = str(getattr(tokenizer, "padding_side", "right") or "right")
+        answer_positions = []
+        for feature in features:
+            shift = max_length - len(feature["input_ids"]) if padding_side == "left" else 0
+            answer_positions.append(int(feature["answer_pos"]) + shift)
+        batch["answer_pos"] = torch.tensor(answer_positions, dtype=torch.long)
         batch["answer_idx"] = torch.tensor([feature["answer_idx"] for feature in features], dtype=torch.long)
         batch["teacher_scores"] = torch.tensor([feature["teacher_scores"] for feature in features], dtype=torch.float32)
         return batch

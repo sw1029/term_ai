@@ -14,12 +14,19 @@ PROMPT_TEMPLATE_VARIANTS = {
         "user_prefix": None,
     },
     "concise": {
-        "system": "You are a TOEIC business vocabulary judge. Answer with the best option letter and one short Korean reason.",
-        "user_prefix": "Choose the best option for the vocabulary item.",
+        "system": (
+            "You are a TOEIC business vocabulary judge. Return one valid JSON object first "
+            "with answer, confidence, and optional Korean rationale."
+        ),
+        "user_prefix": "Choose the best option and return JSON first.",
     },
     "json_strict": {
-        "system": "You are a TOEIC business vocabulary judge. Return the selected option letter and a brief Korean reason.",
-        "user_prefix": "Select exactly one option. Keep the answer concise.",
+        "system": (
+            "You are a TOEIC business vocabulary judge. Return valid JSON only. "
+            'Use {"answer": "A|B|C|D", "confidence": 0.0, "rationale": "..."}; '
+            "do not put prose before the JSON object."
+        ),
+        "user_prefix": "Select exactly one option. Return JSON first.",
     },
 }
 

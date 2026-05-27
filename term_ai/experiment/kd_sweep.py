@@ -68,7 +68,7 @@ def _ablation_configs(config: KDAblationSweepConfig) -> dict[str, LoRAKDConfig]:
             include_rationale=True,
             require_teacher_scores=False,
             lambda_soft=0.0,
-            response_format="letter_reason",
+            response_format="json_distribution",
         ),
         "soft_kd_with_rationale": replace(
             base,

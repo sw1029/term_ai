@@ -1,4 +1,12 @@
-from term_ai.experiment.training import _format_chat, _trainer_tokenizer_kwargs
+import json
+
+from term_ai.experiment.lora_kd import _find_answer_token_position
+from term_ai.experiment.training import (
+    _format_chat,
+    _normalize_assistant_json_answer,
+    _tokenize_chat_completion,
+    _trainer_tokenizer_kwargs,
+)
 
 
 def _messages() -> list[dict[str, str]]:
@@ -82,3 +90,62 @@ def test_trainer_tokenizer_kwargs_supports_new_and_old_transformers_signatures()
     tokenizer = object()
     assert _trainer_tokenizer_kwargs(NewTrainer, tokenizer) == {"processing_class": tokenizer}
     assert _trainer_tokenizer_kwargs(OldTrainer, tokenizer) == {"tokenizer": tokenizer}
+
+
+def test_sft_assistant_target_can_be_normalized_to_json_answer():
+    messages = _normalize_assistant_json_answer(_messages())
+    assistant = json.loads(messages[-1]["content"])
+    assert assistant["answer"] == "A"
+    assert assistant["confidence"] == 1.0
+
+
+def test_tokenize_chat_completion_masks_prompt_tokens():
+    class SimpleTokenizer(SystemAcceptingTokenizer):
+        def __call__(self, text: str, truncation: bool, max_length: int) -> dict[str, list[int]]:
+            ids = [ord(char) for char in text][:max_length]
+            return {"input_ids": ids, "attention_mask": [1] * len(ids)}
+
+    tokenizer = SimpleTokenizer()
+    encoded = _tokenize_chat_completion(tokenizer, _messages(), max_length=512, normalize_assistant_json=True)
+    assistant_start = encoded["assistant_start"]
+
+    assert assistant_start > 0
+    assert all(label == -100 for label in encoded["labels"][:assistant_start])
+    assert any(label != -100 for label in encoded["labels"][assistant_start:])
+
+
+def test_kd_answer_position_finds_json_answer_value_token():
+    class CharTokenizer(SystemAcceptingTokenizer):
+        def __call__(self, text: str, truncation: bool, max_length: int) -> dict[str, list[int]]:
+            ids = [ord(char) for char in text][:max_length]
+            return {"input_ids": ids, "attention_mask": [1] * len(ids)}
+
+    messages = [
+        {"role": "system", "content": "System guidance."},
+        {"role": "user", "content": "Question text."},
+        {
+            "role": "assistant",
+            "content": json.dumps(
+                {
+                    "answer": "C",
+                    "confidence": 0.7,
+                    "distribution": {"A": 0.1, "B": 0.1, "C": 0.7, "D": 0.1},
+                },
+                sort_keys=True,
+            ),
+        },
+    ]
+    tokenizer = CharTokenizer()
+    encoded = _tokenize_chat_completion(tokenizer, messages, max_length=512)
+    position = _find_answer_token_position(
+        tokenizer,
+        messages,
+        encoded["input_ids"],
+        encoded["assistant_start"],
+        answer_idx=2,
+        letter_token_ids=[ord("A"), ord("B"), ord("C"), ord("D")],
+        max_length=512,
+    )
+
+    assert position is not None
+    assert chr(encoded["input_ids"][position]) == "C"

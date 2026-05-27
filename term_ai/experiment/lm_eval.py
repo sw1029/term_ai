@@ -8,10 +8,31 @@ from typing import Any
 
 from term_ai.contracts import RAW_GT_STATUS
 from term_ai.experiment.metrics import summarize_predictions
-from term_ai.experiment.mcq import load_mcq_items, parse_answer_letter, prediction_row
+from term_ai.experiment.mcq import (
+    PARSER_VERSION,
+    PROMPT_CONTRACT_VERSION,
+    MCQItem,
+    load_mcq_items,
+    parse_answer_response,
+    prediction_row,
+)
 from term_ai.experiment.ops import memory_snapshot, timed, tokens_per_second
 from term_ai.experiment.progress import InterruptGuard, ProgressLogger
 from term_ai.experiment.test_lock import enforce_final_test_once
+from term_ai.experiment.training import _format_chat
+
+
+def _format_eval_prompt(tokenizer: Any, item: MCQItem, prompt_mode: str) -> tuple[str, str]:
+    if prompt_mode == "plain":
+        return item.prompt(), "plain"
+    if prompt_mode != "chat":
+        raise ValueError("prompt_mode must be chat or plain")
+    if not hasattr(tokenizer, "apply_chat_template"):
+        return item.prompt(), "plain_fallback_no_chat_template"
+    try:
+        return _format_chat(tokenizer, {"messages": item.prompt_messages()}, add_generation_prompt=True), "chat"
+    except Exception:
+        return item.prompt(), "plain_fallback_chat_template_error"
 
 
 def run_hf_zero_shot(
@@ -28,6 +49,7 @@ def run_hf_zero_shot(
     experiment_id: str | None = None,
     test_lock_dir: str | Path | None = None,
     local_cost_per_hour_usd: float = 0.0,
+    prompt_mode: str = "chat",
     resume: bool = True,
     progress_interval_items: int = 1,
 ) -> dict[str, Any]:
@@ -94,23 +116,31 @@ def run_hf_zero_shot(
         for index, item in enumerate(items):
             if progress.has_prediction(item.item_id):
                 continue
-            prompt = item.prompt()
+            prompt, prompt_mode_effective = _format_eval_prompt(tokenizer, item, prompt_mode)
             inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
             with timed() as state:
                 with torch.no_grad():
                     output = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
             new_tokens = int(output.shape[-1] - inputs["input_ids"].shape[-1])
             text = tokenizer.decode(output[0][inputs["input_ids"].shape[-1] :], skip_special_tokens=True)
-            answer, confidence = parse_answer_letter(text)
+            parsed = parse_answer_response(text)
             progress.append_prediction(
                 prediction_row(
                     item,
-                    answer or "PARSE_ERROR",
-                    confidence if confidence is not None else 0.0,
+                    parsed.answer or "PARSE_ERROR",
+                    parsed.confidence if parsed.confidence is not None else 0.0,
                     latency_ms=state["latency_ms"],
                     extra={
-                        "parse_error": answer is None,
+                        "parse_error": parsed.parse_error,
                         "raw_response": text,
+                        "parser_version": parsed.parser_version,
+                        "parse_method": parsed.parse_method,
+                        "strict_parse_error": parsed.strict_parse_error,
+                        "confidence_normalized_from_percent": parsed.confidence_normalized_from_percent,
+                        "prompt_contract_version": PROMPT_CONTRACT_VERSION,
+                        "prompt_mode": prompt_mode,
+                        "prompt_mode_effective": prompt_mode_effective,
+                        "model_name_or_path": model_name_or_path,
                         "tokens_per_sec": tokens_per_second(new_tokens, state["latency_ms"]),
                         "quantization": quantization or "fp16",
                         "adapter_path": str(adapter_path) if adapter_path is not None else None,
@@ -126,8 +156,14 @@ def run_hf_zero_shot(
     metrics = summarize_predictions(predictions)
     metrics["adapter_path"] = str(adapter_path) if adapter_path is not None else None
     metrics["quantization"] = quantization or "fp16"
+    metrics["model_name_or_path"] = model_name_or_path
     metrics["cold_start_ms"] = cold_start_ms
     metrics["local_cost_per_hour_usd"] = local_cost_per_hour_usd
+    metrics["parser_version"] = PARSER_VERSION
+    metrics["prompt_contract_version"] = PROMPT_CONTRACT_VERSION
+    metrics["prompt_mode"] = prompt_mode
+    prompt_modes = sorted({str(row.get("prompt_mode_effective")) for row in predictions})
+    metrics["prompt_mode_effective"] = prompt_modes[0] if len(prompt_modes) == 1 else prompt_modes
     progress.finalize_predictions(
         metrics,
         predictions,
@@ -135,6 +171,10 @@ def run_hf_zero_shot(
             "model_name_or_path": model_name_or_path,
             "adapter_path": str(adapter_path) if adapter_path is not None else None,
             "quantization": quantization or "fp16",
+            "parser_version": PARSER_VERSION,
+            "prompt_contract_version": PROMPT_CONTRACT_VERSION,
+            "prompt_mode": prompt_mode,
+            "prompt_mode_effective": metrics["prompt_mode_effective"],
         },
     )
     return metrics
@@ -154,6 +194,7 @@ def main() -> None:
     parser.add_argument("--experiment-id")
     parser.add_argument("--test-lock-dir")
     parser.add_argument("--local-cost-per-hour-usd", type=float, default=0.0)
+    parser.add_argument("--prompt-mode", choices=["chat", "plain"], default="chat")
     parser.add_argument("--allow-repeat-test", action="store_true")
     parser.add_argument("--no-resume", action="store_true")
     parser.add_argument("--progress-interval-items", type=int, default=1)
@@ -172,6 +213,7 @@ def main() -> None:
         experiment_id=args.experiment_id,
         test_lock_dir=args.test_lock_dir,
         local_cost_per_hour_usd=args.local_cost_per_hour_usd,
+        prompt_mode=args.prompt_mode,
         resume=not args.no_resume,
         progress_interval_items=args.progress_interval_items,
     )

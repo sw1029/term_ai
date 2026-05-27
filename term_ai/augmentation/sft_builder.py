@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from term_ai.contracts import (
@@ -23,7 +24,21 @@ def _answer_text(options: list[str], answer_idx: int, rationale: str) -> str:
     return f"{label}) {options[answer_idx]}\n\n{rationale.strip()}"
 
 
-def candidate_payload_to_sft_record(payload: dict[str, Any]) -> dict[str, Any]:
+def _json_answer_text(answer_idx: int, rationale: str, confidence: float = 1.0) -> str:
+    return json.dumps(
+        {
+            "answer": answer_label(answer_idx),
+            "confidence": confidence,
+            "rationale": rationale.strip(),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+
+
+def candidate_payload_to_sft_record(payload: dict[str, Any], response_format: str = "json_answer") -> dict[str, Any]:
+    if response_format not in {"json_answer", "letter_reason"}:
+        raise ValueError("response_format must be json_answer or letter_reason")
     task_type = ensure_task_type(str(payload.get("task_type", "")))
     word = str(payload["word"]).strip()
     options = [str(option).strip() for option in payload["options"]]
@@ -69,5 +84,9 @@ def candidate_payload_to_sft_record(payload: dict[str, Any]) -> dict[str, Any]:
     else:
         raise ValueError(f"unsupported task type: {task_type}")
 
-    assistant = _answer_text(options, answer_idx, rationale)
+    assistant = (
+        _json_answer_text(answer_idx, rationale)
+        if response_format == "json_answer"
+        else _answer_text(options, answer_idx, rationale)
+    )
     return make_sft_record(SYSTEM_PROMPT, user, assistant)

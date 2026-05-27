@@ -9,7 +9,8 @@ from term_ai.experiment.hybrid import run_hybrid_policy, tune_hybrid_policy
 from term_ai.experiment.kd_sweep import KDAblationSweepConfig, run_kd_ablation_sweep
 from term_ai.experiment.lora_kd import LoRAKDConfig, _lora_kd_training_kwargs, metadata_to_kd_rows
 from term_ai.experiment.metrics import summarize_predictions
-from term_ai.experiment.mcq import parse_answer_letter
+from term_ai.experiment.lm_eval import _format_eval_prompt, run_hf_zero_shot
+from term_ai.experiment.mcq import MCQItem, PARSER_VERSION, parse_answer_letter, parse_answer_response
 from term_ai.experiment.prompt_variation_sweep import PromptVariationSweepConfig, run_prompt_variation_sweep
 from term_ai.experiment.quantization import compare_quantization, validate_g3_adapter_checkpoint
 from term_ai.experiment.reporting import write_final_report_inputs
@@ -21,6 +22,172 @@ from term_ai.experiment.workflow import _augmentation_split_totals, _default_pha
 def test_parse_answer_letter_from_json_and_text():
     assert parse_answer_letter('{"answer": "B", "confidence": 0.7}') == ("B", 0.7)
     assert parse_answer_letter("정답은 C입니다.")[0] == "C"
+
+
+def test_tolerant_parser_handles_common_lm_response_shapes():
+    fenced = '```json\n{"answer": "D", "confidence": 95}\n```'
+    parsed = parse_answer_response(fenced)
+    assert parsed.answer == "D"
+    assert parsed.confidence == 0.95
+    assert parsed.confidence_normalized_from_percent is True
+    assert parsed.strict_parse_error is True
+    assert parsed.parse_method == "fenced_json"
+
+    prose = 'Reasoning first. {"answer": "B", "confidence": 0.8} trailing text'
+    parsed = parse_answer_response(prose)
+    assert parsed.answer == "B"
+    assert parsed.parse_method == "embedded_json"
+
+    assert parse_answer_response("Answer: C").answer == "C"
+    assert parse_answer_response("Therefore, the answer is **B) 재고 목록**. Confidence is 0.9.").answer == "B"
+    confident = parse_answer_response("Therefore, C is the correct answer, and the confidence is 95%.")
+    assert confident.answer == "C"
+    assert confident.confidence == 0.95
+    assert confident.confidence_normalized_from_percent is True
+    assert parse_answer_response("Option D is clearly the most appropriate choice.").answer == "D"
+    assert parse_answer_response("B가 정답입니다.").answer == "B"
+    assert parse_answer_response('* **B) 문제:** Problem (this is the correct answer)').answer == "B"
+    assert parse_answer_response('The answer choice "D) 효력이 있는" is the most accurate.').answer == "D"
+    assert parse_answer_response('{"answer": "C').answer == "C"
+    assert parse_answer_response('Schema: {"answer": "A|B|C|D", "confidence": 0.0').answer is None
+    assert parse_answer_response("B가 정확합니다.").answer == "B"
+    assert parse_answer_response("consulate의 뜻은 영사 임기인 'A'에 해당합니다.").answer == "A"
+    assert parse_answer_response("A) option\nB) another option").answer is None
+    assert parse_answer_response("A is the raw meaning of issue\nB is the raw meaning of issue").answer is None
+    assert parse_answer_response("A is the correct answer.").answer == "A"
+    assert parse_answer_response("A) wrong option\nB) right option (this is the correct answer)").answer == "B"
+
+
+def test_lm_eval_uses_chat_prompt_and_records_parser_audit_fields(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    class FakeTensor:
+        def __init__(self, ids: list[int]) -> None:
+            self.ids = ids
+            self.shape = (1, len(ids))
+
+        def __getitem__(self, index: int) -> list[int]:
+            assert index == 0
+            return self.ids
+
+    class FakeInputs(dict):
+        def to(self, device: str) -> "FakeInputs":
+            return self
+
+    class FakeTokenizer:
+        pad_token = "<pad>"
+        eos_token = "</s>"
+        calls: list[list[dict[str, str]]] = []
+
+        @classmethod
+        def from_pretrained(cls, model_name: str) -> "FakeTokenizer":
+            return cls()
+
+        def apply_chat_template(self, messages: list[dict[str, str]], *, tokenize: bool, add_generation_prompt: bool) -> str:
+            assert tokenize is False
+            assert add_generation_prompt is True
+            self.calls.append(messages)
+            return "CHAT_PROMPT"
+
+        def __call__(self, prompt: str, return_tensors: str) -> FakeInputs:
+            assert prompt == "CHAT_PROMPT"
+            return FakeInputs({"input_ids": FakeTensor([1, 2, 3]), "attention_mask": FakeTensor([1, 1, 1])})
+
+        def decode(self, ids: list[int], skip_special_tokens: bool = True) -> str:
+            return 'Reasoning. {"answer": "A", "confidence": 90}'
+
+    class FakeModel:
+        device = "cpu"
+
+        @classmethod
+        def from_pretrained(cls, model_name: str, **kwargs: object) -> "FakeModel":
+            return cls()
+
+        def generate(self, **kwargs: object) -> FakeTensor:
+            input_ids = kwargs["input_ids"]
+            assert isinstance(input_ids, FakeTensor)
+            return FakeTensor(input_ids.ids + [9, 9])
+
+    class FakeNoGrad:
+        def __enter__(self) -> None:
+            return None
+
+        def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+            return None
+
+    torch_module = types.ModuleType("torch")
+    torch_module.cuda = types.SimpleNamespace(is_available=lambda: False)
+    torch_module.float16 = "float16"
+    torch_module.no_grad = lambda: FakeNoGrad()
+    transformers = types.ModuleType("transformers")
+    transformers.AutoTokenizer = FakeTokenizer
+    transformers.AutoModelForCausalLM = FakeModel
+    transformers.BitsAndBytesConfig = lambda **kwargs: types.SimpleNamespace(**kwargs)
+    monkeypatch.setitem(sys.modules, "torch", torch_module)
+    monkeypatch.setitem(sys.modules, "transformers", transformers)
+
+    metadata = tmp_path / "metadata.jsonl"
+    metadata.write_text(
+        json.dumps(
+            {
+                "item_id": "i1",
+                "status": "raw_gt",
+                "split": "dev",
+                "source": "raw_gt",
+                "dataset_view": "raw_dev",
+                "payload": {
+                    "source_task_type": "Raw Meaning Selection",
+                    "task_type": "Sense Disambiguation",
+                    "word": "contract",
+                    "meaning_ko": "계약",
+                    "context": "Word: contract",
+                    "options": ["계약", "청구서", "감사", "예산"],
+                    "answer_idx": 0,
+                },
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    metrics = run_hf_zero_shot(
+        metadata_path=metadata,
+        output_dir=tmp_path / "out",
+        model_name_or_path="fake-model",
+        final_test_once=False,
+        resume=False,
+    )
+    rows = [json.loads(line) for line in (tmp_path / "out" / "prediction_log.jsonl").read_text().splitlines()]
+
+    assert metrics["accuracy"] == 1.0
+    assert metrics["prompt_mode_effective"] == "chat"
+    assert metrics["model_name_or_path"] == "fake-model"
+    assert metrics["parser_version"] == PARSER_VERSION
+    assert rows[0]["parse_method"] == "embedded_json"
+    assert rows[0]["strict_parse_error"] is True
+    assert rows[0]["confidence_normalized_from_percent"] is True
+    assert rows[0]["prompt_mode_effective"] == "chat"
+    assert rows[0]["model_name_or_path"] == "fake-model"
+
+
+def test_lm_eval_chat_prompt_falls_back_to_plain_without_chat_template():
+    item = MCQItem(
+        item_id="i1",
+        split="dev",
+        task_type="Raw Meaning Selection",
+        word="contract",
+        context="Word: contract",
+        meaning_ko="계약",
+        options=["계약", "청구서", "감사", "예산"],
+        answer_idx=0,
+        status="raw_gt",
+    )
+
+    prompt, effective = _format_eval_prompt(object(), item, "chat")
+
+    assert effective == "plain_fallback_no_chat_template"
+    assert "Return JSON first" in prompt
 
 
 def test_hybrid_policy_uses_fallback_when_confidence_low(tmp_path: Path):
