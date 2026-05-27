@@ -1,0 +1,14 @@
+{
+  "experiment_family": "G3",
+  "checkpoint_type": "lora_sft_kd",
+  "final_adapter": "runs/G3_Qwen_dev/final_adapter",
+  "model_name_or_path": "Qwen/Qwen2.5-3B-Instruct",
+  "metadata_jsonl": "data/metadata/kd_train_view_v1.jsonl",
+  "dev_metadata_jsonl": "data/metadata/kd_dev_view_v1.jsonl",
+  "lambda_soft": 0.5,
+  "hard_label_only": false,
+  "include_rationale": true,
+  "response_format": "json_distribution",
+  "latest_checkpoint": "runs/G3_Qwen_dev/checkpoints/checkpoint-2172",
+  "final_adapter_backup": "runs/G3_Qwen_dev/backups/final_adapter_20260527T052512692447Z"
+}
