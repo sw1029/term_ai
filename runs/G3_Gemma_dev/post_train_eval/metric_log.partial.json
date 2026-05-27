@@ -1,0 +1,48 @@
+{
+  "n": 1170,
+  "accuracy": 0.020512820512820513,
+  "macro_f1": 0.02493997599039616,
+  "classwise_f1": {
+    "A": 0.11734693877551021,
+    "B": 0.007352941176470588,
+    "C": 0.0,
+    "D": 0.0,
+    "PARSE_ERROR": 0.0
+  },
+  "ece": 0.020512820512820513,
+  "brier_score": 0.020512820512820513,
+  "bootstrap_accuracy_95ci": [
+    0.01282051282051282,
+    0.028205128205128206
+  ],
+  "task_counts": {
+    "Raw Meaning Selection": 1170
+  },
+  "task_accuracy": {
+    "Raw Meaning Selection": 0.020512820512820513
+  },
+  "parse_error_rate": 0.935042735042735,
+  "tokens_per_sec": 26.868245240511055,
+  "cost_per_1000_questions": 0.0,
+  "peak_VRAM_or_RAM": 5044.8935546875,
+  "peak_ram_mb": 2505.8671875,
+  "cold_start_ms": 4027.4611330023617,
+  "ops_metric_coverage": {
+    "latency_ms": 1170,
+    "batch_size_1_latency_ms": 1170,
+    "tokens_per_sec": 1170,
+    "peak_vram_mb": 1170,
+    "ram_mb": 1170,
+    "estimated_cost_usd": 0,
+    "local_cost_per_hour_usd": 1170,
+    "cold_start_ms": 1170
+  },
+  "total_estimated_cost_usd": 0.0,
+  "latency_p50": 705.6354879969149,
+  "latency_p95": 2344.2189389970736,
+  "batch_size_1_latency_p95": 2344.2189389970736,
+  "adapter_path": "runs/G3_Gemma_dev/final_adapter",
+  "quantization": "fp16",
+  "local_cost_per_hour_usd": 0.0,
+  "partial": false
+}
