@@ -4,5 +4,15 @@
   "final_adapter_backup": "runs/G2_Qwen_dev/backups/final_adapter_20260527T015113214217Z",
   "latest_checkpoint": "runs/G2_Qwen_dev/checkpoints/checkpoint-2172",
   "resume_supported": true,
-  "weight_backup_required": true
+  "weight_backup_required": true,
+  "status": "completed",
+  "completed_count": 0,
+  "total_count": null,
+  "final_artifact": "runs/G2_Qwen_dev/final_adapter",
+  "partial_metrics": null,
+  "reason": null,
+  "details": {
+    "final_adapter_backup": "runs/G2_Qwen_dev/backups/final_adapter_20260527T015113214217Z"
+  },
+  "updated_at": "2026-05-27T02:31:14.031928+00:00"
 }

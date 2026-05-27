@@ -43,6 +43,5 @@
   "batch_size_1_latency_p95": 2509.395766996022,
   "adapter_path": "runs/G2_Qwen_dev/final_adapter",
   "quantization": "fp16",
-  "local_cost_per_hour_usd": 0.0,
-  "partial": false
+  "local_cost_per_hour_usd": 0.0
 }

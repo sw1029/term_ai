@@ -1,58 +1,62 @@
 {
-  "status": "running",
-  "stage": "G0:eval",
-  "completed_count": 517,
+  "status": "completed",
+  "stage": "completed",
+  "completed_count": 1170,
   "total_count": 1170,
   "latest_checkpoint": null,
   "final_artifact": null,
   "partial_metrics": {
-    "n": 517,
-    "accuracy": 0.24177949709864605,
-    "macro_f1": 0.13343928218448184,
+    "n": 1170,
+    "accuracy": 0.24871794871794872,
+    "macro_f1": 0.1387704383421608,
     "classwise_f1": {
-      "A": 0.4382470119521913,
-      "B": 0.049586776859504134,
-      "C": 0.13740458015267176,
-      "D": 0.04195804195804196,
+      "A": 0.44328097731239086,
+      "B": 0.07092198581560284,
+      "C": 0.12286689419795223,
+      "D": 0.05678233438485804,
       "PARSE_ERROR": 0.0
     },
-    "ece": 0.24177949709864605,
-    "brier_score": 0.24177949709864605,
+    "ece": 0.24871794871794872,
+    "brier_score": 0.24871794871794872,
     "bootstrap_accuracy_95ci": [
-      0.20889748549323017,
-      0.2746615087040619
+      0.2230769230769231,
+      0.2743589743589744
     ],
     "task_counts": {
-      "Raw Meaning Selection": 517
+      "Raw Meaning Selection": 1170
     },
     "task_accuracy": {
-      "Raw Meaning Selection": 0.24177949709864605
+      "Raw Meaning Selection": 0.24871794871794872
     },
-    "parse_error_rate": 0.26499032882011603,
-    "tokens_per_sec": 24.719658066282694,
+    "parse_error_rate": 0.25811965811965815,
+    "tokens_per_sec": 24.864306101575792,
     "cost_per_1000_questions": 0.0,
     "peak_VRAM_or_RAM": 11999.88037109375,
-    "peak_ram_mb": 3011.37109375,
+    "peak_ram_mb": 3013.8828125,
     "cold_start_ms": 2731.2467500014463,
     "ops_metric_coverage": {
-      "latency_ms": 517,
-      "batch_size_1_latency_ms": 517,
-      "tokens_per_sec": 517,
-      "peak_vram_mb": 517,
-      "ram_mb": 517,
+      "latency_ms": 1170,
+      "batch_size_1_latency_ms": 1170,
+      "tokens_per_sec": 1170,
+      "peak_vram_mb": 1170,
+      "ram_mb": 1170,
       "estimated_cost_usd": 0,
-      "local_cost_per_hour_usd": 517,
-      "cold_start_ms": 517
+      "local_cost_per_hour_usd": 1170,
+      "cold_start_ms": 1170
     },
     "total_estimated_cost_usd": 0.0,
-    "latency_p50": 2482.5084839976626,
+    "latency_p50": 2484.0905649980414,
     "latency_p95": 2509.395766996022,
     "batch_size_1_latency_p95": 2509.395766996022,
-    "partial": true,
-    "completed_count": 517,
-    "total_count": 1170
+    "adapter_path": "runs/G2_Qwen_dev/final_adapter",
+    "quantization": "fp16",
+    "local_cost_per_hour_usd": 0.0
   },
   "reason": null,
-  "details": {},
-  "updated_at": "2026-05-27T02:08:10.824123+00:00"
+  "details": {
+    "model_name_or_path": "Qwen/Qwen2.5-3B-Instruct",
+    "adapter_path": "runs/G2_Qwen_dev/final_adapter",
+    "quantization": "fp16"
+  },
+  "updated_at": "2026-05-27T02:31:14.006650+00:00"
 }
