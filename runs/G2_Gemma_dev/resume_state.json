@@ -1,0 +1,18 @@
+{
+  "stage": "trained",
+  "final_adapter": "runs/G2_Gemma_dev/final_adapter",
+  "final_adapter_backup": "runs/G2_Gemma_dev/backups/final_adapter_20260528T003115706370Z",
+  "latest_checkpoint": "runs/G2_Gemma_dev/checkpoints/checkpoint-2172",
+  "resume_supported": true,
+  "weight_backup_required": true,
+  "status": "completed",
+  "completed_count": 0,
+  "total_count": null,
+  "final_artifact": "runs/G2_Gemma_dev/final_adapter",
+  "partial_metrics": null,
+  "reason": null,
+  "details": {
+    "final_adapter_backup": "runs/G2_Gemma_dev/backups/final_adapter_20260528T003115706370Z"
+  },
+  "updated_at": "2026-05-28T01:08:20.910287+00:00"
+}

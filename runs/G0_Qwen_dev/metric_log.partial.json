@@ -1,0 +1,52 @@
+{
+  "n": 1170,
+  "accuracy": 0.9914529914529915,
+  "macro_f1": 0.9916080034091708,
+  "classwise_f1": {
+    "A": 0.9840764331210191,
+    "B": 0.9872495446265938,
+    "C": 1.0,
+    "D": 0.9951060358890701
+  },
+  "ece": 0.9814529914529915,
+  "brier_score": 0.9804529914529915,
+  "bootstrap_accuracy_95ci": [
+    0.9854700854700855,
+    0.9965811965811966
+  ],
+  "task_counts": {
+    "Raw Meaning Selection": 1170
+  },
+  "task_accuracy": {
+    "Raw Meaning Selection": 0.9914529914529915
+  },
+  "parse_error_rate": 0.0,
+  "tokens_per_sec": 26.710746749121746,
+  "cost_per_1000_questions": 0.0,
+  "peak_VRAM_or_RAM": 5944.1396484375,
+  "peak_ram_mb": 2314.515625,
+  "cold_start_ms": 3125.148988998262,
+  "ops_metric_coverage": {
+    "latency_ms": 1170,
+    "batch_size_1_latency_ms": 1170,
+    "tokens_per_sec": 1170,
+    "peak_vram_mb": 1170,
+    "ram_mb": 1170,
+    "estimated_cost_usd": 0,
+    "local_cost_per_hour_usd": 1170,
+    "cold_start_ms": 1170
+  },
+  "total_estimated_cost_usd": 0.0,
+  "latency_p50": 2393.706093000219,
+  "latency_p95": 2412.8205889974197,
+  "batch_size_1_latency_p95": 2412.8205889974197,
+  "adapter_path": null,
+  "quantization": "fp16",
+  "model_name_or_path": "Qwen/Qwen2.5-3B-Instruct",
+  "local_cost_per_hour_usd": 0.0,
+  "parser_version": "mcq_answer_parser_v2",
+  "prompt_contract_version": "mcq_answer_json_v2",
+  "prompt_mode": "chat",
+  "prompt_mode_effective": "chat",
+  "partial": false
+}
