@@ -1,0 +1,179 @@
+{
+  "fp16": {
+    "n": 1170,
+    "accuracy": 1.0,
+    "macro_f1": 1.0,
+    "classwise_f1": {
+      "A": 1.0,
+      "B": 1.0,
+      "C": 1.0,
+      "D": 1.0
+    },
+    "ece": 0.02135042735042355,
+    "brier_score": 0.010266153846153847,
+    "bootstrap_accuracy_95ci": [
+      1.0,
+      1.0
+    ],
+    "task_counts": {
+      "Raw Meaning Selection": 1170
+    },
+    "task_accuracy": {
+      "Raw Meaning Selection": 1.0
+    },
+    "parse_error_rate": 0.0,
+    "tokens_per_sec": 25.50654595621741,
+    "cost_per_1000_questions": 0.0,
+    "peak_VRAM_or_RAM": 5951.1708984375,
+    "peak_ram_mb": 2387.2734375,
+    "cold_start_ms": 3680.1056930125924,
+    "ops_metric_coverage": {
+      "latency_ms": 1170,
+      "batch_size_1_latency_ms": 1170,
+      "tokens_per_sec": 1170,
+      "peak_vram_mb": 1170,
+      "ram_mb": 1170,
+      "estimated_cost_usd": 0,
+      "local_cost_per_hour_usd": 1170,
+      "cold_start_ms": 1170
+    },
+    "total_estimated_cost_usd": 0.0,
+    "latency_p50": 2507.4822059978032,
+    "latency_p95": 2522.4254820059286,
+    "batch_size_1_latency_p95": 2522.4254820059286,
+    "adapter_path": "runs/G3_Qwen_dev/final_adapter",
+    "quantization": "fp16",
+    "model_name_or_path": "Qwen/Qwen2.5-3B-Instruct",
+    "local_cost_per_hour_usd": 0.0,
+    "parser_version": "mcq_answer_parser_v2",
+    "prompt_contract_version": "mcq_answer_json_v2",
+    "prompt_mode": "chat",
+    "prompt_mode_effective": "chat",
+    "g3_checkpoint_id": "runs/G3_Qwen_dev/final_adapter",
+    "g3_checkpoint_validation": {
+      "adapter_path": "runs/G3_Qwen_dev/final_adapter",
+      "verified": true,
+      "manifest_path": "runs/G3_Qwen_dev/g3_checkpoint_manifest.json",
+      "manifest_type": "g3_checkpoint_manifest",
+      "g3_checkpoint_id": "runs/G3_Qwen_dev/final_adapter"
+    }
+  },
+  "8bit": {
+    "n": 1170,
+    "accuracy": 0.9991452991452991,
+    "macro_f1": 0.9991513347840921,
+    "classwise_f1": {
+      "A": 0.9984202211690364,
+      "B": 1.0,
+      "C": 0.9981851179673321,
+      "D": 1.0
+    },
+    "ece": 0.0016239316239311519,
+    "brier_score": 0.0008846153846153846,
+    "bootstrap_accuracy_95ci": [
+      0.9965811965811966,
+      1.0
+    ],
+    "task_counts": {
+      "Raw Meaning Selection": 1170
+    },
+    "task_accuracy": {
+      "Raw Meaning Selection": 0.9991452991452991
+    },
+    "parse_error_rate": 0.0,
+    "tokens_per_sec": 12.702012667102979,
+    "cost_per_1000_questions": 0.0,
+    "peak_VRAM_or_RAM": 5951.1708984375,
+    "peak_ram_mb": 2792.5703125,
+    "cold_start_ms": 35032.51658299996,
+    "ops_metric_coverage": {
+      "latency_ms": 1170,
+      "batch_size_1_latency_ms": 1170,
+      "tokens_per_sec": 1170,
+      "peak_vram_mb": 1170,
+      "ram_mb": 1170,
+      "estimated_cost_usd": 0,
+      "local_cost_per_hour_usd": 1170,
+      "cold_start_ms": 1170
+    },
+    "total_estimated_cost_usd": 0.0,
+    "latency_p50": 5018.621672003064,
+    "latency_p95": 5492.194863007171,
+    "batch_size_1_latency_p95": 5492.194863007171,
+    "adapter_path": "runs/G3_Qwen_dev/final_adapter",
+    "quantization": "8bit",
+    "model_name_or_path": "Qwen/Qwen2.5-3B-Instruct",
+    "local_cost_per_hour_usd": 0.0,
+    "parser_version": "mcq_answer_parser_v2",
+    "prompt_contract_version": "mcq_answer_json_v2",
+    "prompt_mode": "chat",
+    "prompt_mode_effective": "chat",
+    "g3_checkpoint_id": "runs/G3_Qwen_dev/final_adapter",
+    "g3_checkpoint_validation": {
+      "adapter_path": "runs/G3_Qwen_dev/final_adapter",
+      "verified": true,
+      "manifest_path": "runs/G3_Qwen_dev/g3_checkpoint_manifest.json",
+      "manifest_type": "g3_checkpoint_manifest",
+      "g3_checkpoint_id": "runs/G3_Qwen_dev/final_adapter"
+    }
+  },
+  "4bit": {
+    "n": 1170,
+    "accuracy": 0.9982905982905983,
+    "macro_f1": 0.9982638888888888,
+    "classwise_f1": {
+      "A": 1.0,
+      "B": 0.9963235294117647,
+      "C": 1.0,
+      "D": 0.9967320261437909
+    },
+    "ece": 0.18959829059828587,
+    "brier_score": 0.1578462393162393,
+    "bootstrap_accuracy_95ci": [
+      0.9957264957264957,
+      1.0
+    ],
+    "task_counts": {
+      "Raw Meaning Selection": 1170
+    },
+    "task_accuracy": {
+      "Raw Meaning Selection": 0.9982905982905983
+    },
+    "parse_error_rate": 0.0,
+    "tokens_per_sec": 28.809221413867913,
+    "cost_per_1000_questions": 0.0,
+    "peak_VRAM_or_RAM": 5951.1708984375,
+    "peak_ram_mb": 2814.21484375,
+    "cold_start_ms": 34018.444615008775,
+    "ops_metric_coverage": {
+      "latency_ms": 1170,
+      "batch_size_1_latency_ms": 1170,
+      "tokens_per_sec": 1170,
+      "peak_vram_mb": 1170,
+      "ram_mb": 1170,
+      "estimated_cost_usd": 0,
+      "local_cost_per_hour_usd": 1170,
+      "cold_start_ms": 1170
+    },
+    "total_estimated_cost_usd": 0.0,
+    "latency_p50": 1879.430278990185,
+    "latency_p95": 1918.4204899938777,
+    "batch_size_1_latency_p95": 1918.4204899938777,
+    "adapter_path": "runs/G3_Qwen_dev/final_adapter",
+    "quantization": "4bit",
+    "model_name_or_path": "Qwen/Qwen2.5-3B-Instruct",
+    "local_cost_per_hour_usd": 0.0,
+    "parser_version": "mcq_answer_parser_v2",
+    "prompt_contract_version": "mcq_answer_json_v2",
+    "prompt_mode": "chat",
+    "prompt_mode_effective": "chat",
+    "g3_checkpoint_id": "runs/G3_Qwen_dev/final_adapter",
+    "g3_checkpoint_validation": {
+      "adapter_path": "runs/G3_Qwen_dev/final_adapter",
+      "verified": true,
+      "manifest_path": "runs/G3_Qwen_dev/g3_checkpoint_manifest.json",
+      "manifest_type": "g3_checkpoint_manifest",
+      "g3_checkpoint_id": "runs/G3_Qwen_dev/final_adapter"
+    }
+  }
+}
