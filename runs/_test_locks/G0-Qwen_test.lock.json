@@ -1,0 +1,7 @@
+{
+  "experiment_id": "G0-Qwen",
+  "eval_split": "test",
+  "output_dir": "runs/G0_Qwen_test_final",
+  "locked_at": "2026-05-31T15:30:48.486927+00:00",
+  "policy": "final test can be evaluated only once unless the lock is explicitly removed"
+}

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from term_ai.contracts import RAW_GT_STATUS
+from term_ai.experiment.hf_loading import from_pretrained_with_trust, is_bitnet_config
 from term_ai.experiment.lm_eval import run_hf_zero_shot
 from term_ai.experiment.progress import atomic_write_json, load_json
 from term_ai.experiment.test_lock import enforce_final_test_once
@@ -99,9 +100,24 @@ def compare_quantization(
     test_lock_dir: str | Path | None = None,
     local_cost_per_hour_usd: float = 0.0,
     prompt_mode: str = "chat",
+    trust_remote_code: bool = False,
     resume: bool = True,
     progress_interval_items: int = 1,
 ) -> dict[str, Any]:
+    try:
+        from transformers import AutoConfig
+    except ImportError as exc:
+        raise RuntimeError("Install train dependencies first: pip install -e .[train]") from exc
+    try:
+        model_config = from_pretrained_with_trust(AutoConfig, model_name_or_path, trust_remote_code)
+    except OSError:
+        model_config = None
+    if model_config is not None and is_bitnet_config(model_config):
+        raise ValueError(
+            "G4 bitsandbytes quantization comparison is unsupported for BitNet offline-quantized "
+            "checkpoints. Leave RUN_BITNET_G4=0 in scripts/run_remaining_experiments.sh."
+        )
+
     checkpoint_validation = validate_g3_adapter_checkpoint(
         adapter_path,
         g3_checkpoint_id=g3_checkpoint_id,
@@ -140,6 +156,7 @@ def compare_quantization(
             experiment_id=f"G4-{mode}",
             local_cost_per_hour_usd=local_cost_per_hour_usd,
             prompt_mode=prompt_mode,
+            trust_remote_code=trust_remote_code,
             resume=resume,
             progress_interval_items=progress_interval_items,
         )
@@ -163,6 +180,7 @@ def main() -> None:
     parser.add_argument("--allow-unverified-g3-adapter", action="store_true")
     parser.add_argument("--local-cost-per-hour-usd", type=float, default=0.0)
     parser.add_argument("--prompt-mode", choices=["chat", "plain"], default="chat")
+    parser.add_argument("--trust-remote-code", action="store_true")
     parser.add_argument("--test-lock-dir")
     parser.add_argument("--allow-repeat-test", action="store_true")
     parser.add_argument("--no-resume", action="store_true")
@@ -182,6 +200,7 @@ def main() -> None:
         test_lock_dir=args.test_lock_dir,
         local_cost_per_hour_usd=args.local_cost_per_hour_usd,
         prompt_mode=args.prompt_mode,
+        trust_remote_code=args.trust_remote_code,
         resume=not args.no_resume,
         progress_interval_items=args.progress_interval_items,
     )

@@ -1,0 +1,48 @@
+{
+  "n": 1170,
+  "accuracy": 0.8478632478632478,
+  "macro_f1": 0.8484330781002499,
+  "classwise_f1": {
+    "A": 0.8444444444444444,
+    "B": 0.8650646950092422,
+    "C": 0.8530973451327434,
+    "D": 0.8311258278145697
+  },
+  "ece": 0.15423462742421135,
+  "brier_score": 0.152047424272918,
+  "bootstrap_accuracy_95ci": [
+    0.8256410256410256,
+    0.8683760683760684
+  ],
+  "task_counts": {
+    "Raw Meaning Selection": 1170
+  },
+  "task_accuracy": {
+    "Raw Meaning Selection": 0.8478632478632478
+  },
+  "parse_error_rate": 0.0,
+  "tokens_per_sec": 0.0,
+  "cost_per_1000_questions": 0.0,
+  "peak_VRAM_or_RAM": 2205.8603515625,
+  "peak_ram_mb": 2022.3359375,
+  "cold_start_ms": 0.0,
+  "ops_metric_coverage": {
+    "latency_ms": 1170,
+    "batch_size_1_latency_ms": 1170,
+    "tokens_per_sec": 0,
+    "peak_vram_mb": 1170,
+    "ram_mb": 1170,
+    "estimated_cost_usd": 0,
+    "local_cost_per_hour_usd": 0,
+    "cold_start_ms": 0
+  },
+  "latency_p50": 21.956962999865937,
+  "latency_p95": 25.968904999899678,
+  "batch_size_1_latency_p95": 25.968904999899678,
+  "primary_accept_rate": 0.6299145299145299,
+  "cross_encoder_rate": 0.3700854700854701,
+  "fallback_rate": 0.0,
+  "low_confidence_threshold": 0.3,
+  "high_confidence_threshold": 0.8,
+  "partial": false
+}

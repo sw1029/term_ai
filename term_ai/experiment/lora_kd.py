@@ -10,6 +10,13 @@ from typing import Any
 
 from term_ai.augmentation.sft_builder import candidate_payload_to_sft_record
 from term_ai.contracts import RAW_GT_STATUS, answer_label, iter_jsonl, status_reaches
+from term_ai.experiment.hf_loading import (
+    bitnet_loading_config,
+    clear_bitnet_quantization_training_guard,
+    from_pretrained_with_trust,
+    is_bitnet_config,
+    repair_bitnet_autobitlinear_weights,
+)
 from term_ai.experiment.progress import (
     InterruptGuard,
     ProgressLogger,
@@ -21,6 +28,7 @@ from term_ai.experiment.training import (
     _format_chat,
     _make_trainer_progress_callback,
     _pad_completion_labels,
+    _resolve_lora_target_modules,
     _trainer_tokenizer_kwargs,
     _tokenize_chat_completion,
 )
@@ -42,6 +50,7 @@ class LoRAKDConfig:
     lora_r: int = 8
     lora_alpha: int = 16
     lora_dropout: float = 0.05
+    lora_target_modules: list[str] | None = None
     lambda_soft: float = 0.5
     hard_label_only: bool = False
     include_rationale: bool = True
@@ -53,6 +62,7 @@ class LoRAKDConfig:
     backup_checkpoints: bool = True
     save_steps: int | None = None
     save_total_limit: int = 3
+    trust_remote_code: bool = False
     progress_interval_items: int = 1
 
 
@@ -125,7 +135,6 @@ def _lora_kd_training_kwargs(config: LoRAKDConfig, output_dir: Path) -> dict[str
         "gradient_accumulation_steps": config.gradient_accumulation_steps,
         "learning_rate": config.learning_rate,
         "num_train_epochs": config.epochs,
-        "logging_dir": str(output_dir / "logs"),
         "logging_steps": 10,
         "save_strategy": "steps" if config.save_steps is not None else "epoch",
         "save_total_limit": config.save_total_limit,
@@ -188,7 +197,7 @@ def train_lora_sft_kd(config: LoRAKDConfig) -> Path:
         import torch.nn.functional as F
         from datasets import Dataset
         from peft import LoraConfig, get_peft_model
-        from transformers import AutoModelForCausalLM, AutoTokenizer, Trainer, TrainerCallback, TrainingArguments
+        from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, Trainer, TrainerCallback, TrainingArguments
     except ImportError as exc:
         raise RuntimeError("Install training dependencies first: pip install -e .[train]") from exc
 
@@ -219,7 +228,16 @@ def train_lora_sft_kd(config: LoRAKDConfig) -> Path:
     if not dev_rows:
         raise ValueError("no dev rows for LoRA KD")
 
-    tokenizer = AutoTokenizer.from_pretrained(config.model_name_or_path, use_fast=True)
+    model_config = from_pretrained_with_trust(AutoConfig, config.model_name_or_path, config.trust_remote_code)
+    is_bitnet = is_bitnet_config(model_config)
+    model_config = bitnet_loading_config(model_config, for_lora=True)
+    tokenizer = from_pretrained_with_trust(
+        AutoTokenizer,
+        config.model_name_or_path,
+        config.trust_remote_code,
+        use_fast=True,
+        **({"fix_mistral_regex": True} if is_bitnet else {}),
+    )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     letter_token_ids = [
@@ -290,7 +308,14 @@ def train_lora_sft_kd(config: LoRAKDConfig) -> Path:
                 loss = loss + config.lambda_soft * soft_loss
             return (loss, outputs) if return_outputs else loss
 
-    model = AutoModelForCausalLM.from_pretrained(config.model_name_or_path)
+    model = from_pretrained_with_trust(
+        AutoModelForCausalLM,
+        config.model_name_or_path,
+        config.trust_remote_code,
+        config=model_config,
+    )
+    repair_bitnet_autobitlinear_weights(model)
+    clear_bitnet_quantization_training_guard(model)
     model = get_peft_model(
         model,
         LoraConfig(
@@ -299,8 +324,10 @@ def train_lora_sft_kd(config: LoRAKDConfig) -> Path:
             lora_dropout=config.lora_dropout,
             bias="none",
             task_type="CAUSAL_LM",
+            target_modules=_resolve_lora_target_modules(model, config.lora_target_modules),
         ),
     )
+    clear_bitnet_quantization_training_guard(model)
     training_kwargs = _lora_kd_training_kwargs(config, output_dir)
     strategy_name = "eval_strategy" if "eval_strategy" in inspect.signature(TrainingArguments.__init__).parameters else "evaluation_strategy"
     training_kwargs[strategy_name] = "epoch"
@@ -349,6 +376,7 @@ def train_lora_sft_kd(config: LoRAKDConfig) -> Path:
         "hard_label_only": config.hard_label_only,
         "include_rationale": config.include_rationale,
         "response_format": config.response_format,
+        "trust_remote_code": config.trust_remote_code,
         "latest_checkpoint": str(resolve_latest_checkpoint(output_dir)) if resolve_latest_checkpoint(output_dir) else None,
         "final_adapter_backup": str(final_backup) if final_backup else None,
     }
@@ -381,6 +409,7 @@ def main() -> None:
     parser.add_argument("--lora-r", type=int, default=8)
     parser.add_argument("--lora-alpha", type=int, default=16)
     parser.add_argument("--lora-dropout", type=float, default=0.05)
+    parser.add_argument("--lora-target-modules", nargs="+")
     parser.add_argument("--lambda-soft", type=float, default=0.5)
     parser.add_argument("--hard-label-only", action="store_true")
     parser.add_argument("--drop-rationale", dest="include_rationale", action="store_false")
@@ -394,6 +423,7 @@ def main() -> None:
     parser.add_argument("--no-checkpoint-backup", action="store_true")
     parser.add_argument("--save-steps", type=int)
     parser.add_argument("--save-total-limit", type=int, default=3)
+    parser.add_argument("--trust-remote-code", action="store_true")
     parser.add_argument("--progress-interval-items", type=int, default=1)
     args = parser.parse_args()
     args.resume = not args.no_resume

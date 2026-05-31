@@ -1,0 +1,43 @@
+{
+  "n": 1151,
+  "accuracy": 0.5994787141615986,
+  "macro_f1": 0.598249921855794,
+  "classwise_f1": {
+    "A": 0.5555555555555555,
+    "B": 0.6535947712418301,
+    "C": 0.5945945945945945,
+    "D": 0.5892547660311959
+  },
+  "ece": 0.12392404695641736,
+  "brier_score": 0.2030965605087173,
+  "bootstrap_accuracy_95ci": [
+    0.5699391833188532,
+    0.6281494352736751
+  ],
+  "task_counts": {
+    "Raw Meaning Selection": 1151
+  },
+  "task_accuracy": {
+    "Raw Meaning Selection": 0.5994787141615986
+  },
+  "parse_error_rate": 0.0,
+  "tokens_per_sec": 0.0,
+  "cost_per_1000_questions": 0.0,
+  "peak_VRAM_or_RAM": 675.66015625,
+  "peak_ram_mb": 1851.5859375,
+  "cold_start_ms": 0.0,
+  "ops_metric_coverage": {
+    "latency_ms": 1151,
+    "batch_size_1_latency_ms": 1151,
+    "tokens_per_sec": 0,
+    "peak_vram_mb": 1151,
+    "ram_mb": 1151,
+    "estimated_cost_usd": 0,
+    "local_cost_per_hour_usd": 0,
+    "cold_start_ms": 0
+  },
+  "latency_p50": 21.215434000623645,
+  "latency_p95": 23.374468000838533,
+  "batch_size_1_latency_p95": 23.374468000838533,
+  "partial": false
+}

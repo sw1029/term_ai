@@ -1,0 +1,21 @@
+{
+  "status": "completed",
+  "stage": "trained",
+  "completed_count": 0,
+  "total_count": 2172,
+  "latest_checkpoint": "runs/G3_BitNet_dev/checkpoints/checkpoint-2172",
+  "final_artifact": "runs/G3_BitNet_dev/final_adapter",
+  "partial_metrics": {
+    "train_runtime": 3204.3812,
+    "train_samples_per_second": 5.418,
+    "train_steps_per_second": 0.678,
+    "total_flos": 3.884279975737344e+16,
+    "train_loss": 2.062178640734425,
+    "epoch": 3.0
+  },
+  "reason": null,
+  "details": {
+    "final_adapter_backup": "runs/G3_BitNet_dev/backups/final_adapter_20260531T113208160815Z"
+  },
+  "updated_at": "2026-05-31T11:32:08.181562+00:00"
+}

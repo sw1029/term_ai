@@ -6,6 +6,12 @@ import types
 import pytest
 
 from term_ai.experiment.hybrid import run_hybrid_policy, tune_hybrid_policy
+from term_ai.experiment.hf_loading import (
+    bitnet_loading_config,
+    clear_bitnet_quantization_training_guard,
+    from_pretrained_with_trust,
+    repair_bitnet_autobitlinear_weights,
+)
 from term_ai.experiment.kd_sweep import KDAblationSweepConfig, run_kd_ablation_sweep
 from term_ai.experiment.lora_kd import LoRAKDConfig, _lora_kd_training_kwargs, metadata_to_kd_rows
 from term_ai.experiment.metrics import summarize_predictions
@@ -16,7 +22,106 @@ from term_ai.experiment.quantization import compare_quantization, validate_g3_ad
 from term_ai.experiment.reporting import write_final_report_inputs
 from term_ai.experiment.reranker import run_reranker
 from term_ai.experiment.test_lock import enforce_final_test_once
+from term_ai.experiment.training import BITNET_LORA_TARGET_MODULES, _resolve_lora_target_modules
 from term_ai.experiment.workflow import _augmentation_split_totals, _default_phase_jobs
+
+
+def test_hf_loader_falls_back_when_remote_module_is_missing():
+    class Factory:
+        calls: list[dict[str, object]] = []
+
+        @classmethod
+        def from_pretrained(cls, model_name_or_path: str, **kwargs: object) -> dict[str, object]:
+            cls.calls.append({"model_name_or_path": model_name_or_path, **kwargs})
+            if kwargs.get("trust_remote_code") is True:
+                raise OSError(
+                    "model does not appear to have a file named configuration_bitnet.py."
+                )
+            return dict(cls.calls[-1])
+
+    loaded = from_pretrained_with_trust(Factory, "example/model", True, use_fast=True)
+
+    assert Factory.calls[0]["trust_remote_code"] is True
+    assert Factory.calls[1]["trust_remote_code"] is False
+    assert loaded["model_name_or_path"] == "example/model"
+    assert loaded["use_fast"] is True
+
+
+def test_bitnet_lora_target_modules_are_explicit():
+    fake_model = types.SimpleNamespace(config=types.SimpleNamespace(model_type="bitnet"))
+
+    assert _resolve_lora_target_modules(fake_model) == BITNET_LORA_TARGET_MODULES
+    assert _resolve_lora_target_modules(fake_model, ["custom_proj"]) == ["custom_proj"]
+
+
+def test_bitnet_loading_config_selects_linear_class_by_use_case():
+    config = types.SimpleNamespace(
+        model_type="bitnet",
+        quantization_config={
+            "quant_method": "bitnet",
+            "linear_class": "autobitlinear",
+            "quantization_mode": "offline",
+        },
+    )
+
+    eval_config = bitnet_loading_config(config, for_lora=False)
+    lora_config = bitnet_loading_config(config, for_lora=True)
+
+    assert eval_config.quantization_config["linear_class"] == "bitlinear"
+    assert lora_config.quantization_config["linear_class"] == "autobitlinear"
+    assert config.quantization_config["linear_class"] == "autobitlinear"
+
+
+def test_bitnet_autobitlinear_uint8_weights_are_repaired():
+    torch = pytest.importorskip("torch")
+
+    class AutoBitLinear(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.out_features = 2
+            self.in_features = 3
+            self.weight = torch.nn.Parameter(
+                torch.tensor([[255, 0, 1], [1, 255, 0]], dtype=torch.uint8),
+                requires_grad=False,
+            )
+            self.register_buffer("weight_scale", torch.ones(1, dtype=torch.bfloat16))
+
+    class FakeModel(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.config = types.SimpleNamespace(model_type="bitnet")
+            self.proj = AutoBitLinear()
+
+    model = FakeModel()
+
+    assert repair_bitnet_autobitlinear_weights(model) == 1
+    assert model.proj.weight.dtype == torch.bfloat16
+    assert model.proj.weight.tolist() == [[-1.0, 0.0, 1.0], [1.0, -1.0, 0.0]]
+
+
+def test_bitnet_training_guard_metadata_is_cleared():
+    base = types.SimpleNamespace(
+        config=types.SimpleNamespace(model_type="bitnet", quantization_config={"quant_method": "bitnet"}),
+        is_quantized=True,
+        hf_quantizer=object(),
+        quantization_method="bitnet",
+    )
+    wrapper = types.SimpleNamespace(
+        config=types.SimpleNamespace(model_type="peft"),
+        base_model=types.SimpleNamespace(model=base),
+        is_quantized=True,
+        hf_quantizer=object(),
+        quantization_method="bitnet",
+    )
+
+    assert clear_bitnet_quantization_training_guard(wrapper) >= 2
+    assert wrapper.is_quantized is False
+    assert wrapper.hf_quantizer is None
+    assert wrapper.quantization_method is None
+    assert base.is_quantized is False
+    assert base.hf_quantizer is None
+    assert base.quantization_method is None
+    assert base.config.quantization_config is None
 
 
 def test_parse_answer_letter_from_json_and_text():
@@ -120,6 +225,9 @@ def test_lm_eval_uses_chat_prompt_and_records_parser_audit_fields(
     torch_module.float16 = "float16"
     torch_module.no_grad = lambda: FakeNoGrad()
     transformers = types.ModuleType("transformers")
+    transformers.AutoConfig = types.SimpleNamespace(
+        from_pretrained=lambda model_name, **kwargs: types.SimpleNamespace(model_type="fake")
+    )
     transformers.AutoTokenizer = FakeTokenizer
     transformers.AutoModelForCausalLM = FakeModel
     transformers.BitsAndBytesConfig = lambda **kwargs: types.SimpleNamespace(**kwargs)
@@ -628,12 +736,28 @@ def test_master_workflow_default_jobs_cover_g0_g4_and_h1():
                 "enabled": True,
                 "output_dir": "runs/master_matrix",
                 "eval_split": "dev",
-                "model_ids": {"gemma": "google/gemma-2-2b-it", "qwen": "Qwen/Qwen2.5-3B-Instruct"},
+                "model_ids": {
+                    "gemma": "google/gemma-2-2b-it",
+                    "qwen": "Qwen/Qwen2.5-3B-Instruct",
+                    "bitnet": "microsoft/bitnet-b1.58-2B-4T",
+                },
             },
         }
     )
     names = {job["name"] for job in jobs}
-    assert {"G0-Gemma", "G0-Qwen", "G4", "H1", "prompt-template-variation", "G3-KD-ablation"} <= names
+    assert {
+        "G0-Gemma",
+        "G0-Qwen",
+        "G0-BitNet",
+        "G3-BitNet",
+        "G4",
+        "H1",
+        "prompt-template-variation",
+        "G3-KD-ablation",
+    } <= names
+    bitnet_commands = [part for job in jobs if "BitNet" in str(job["name"]) for part in job["command"]]
+    assert "execution.model_name_or_path=microsoft/bitnet-b1.58-2B-4T" in bitnet_commands
+    assert "execution.trust_remote_code=true" not in bitnet_commands
     assert any("execution.adapter_path=" in part for job in jobs for part in job["command"])
 
 

@@ -1,0 +1,18 @@
+{
+  "stage": "trained",
+  "final_adapter": "runs/G2_BitNet_dev/final_adapter",
+  "final_adapter_backup": "runs/G2_BitNet_dev/backups/final_adapter_20260531T095354128828Z",
+  "latest_checkpoint": "runs/G2_BitNet_dev/checkpoints/checkpoint-2172",
+  "resume_supported": true,
+  "weight_backup_required": true,
+  "status": "completed",
+  "completed_count": 0,
+  "total_count": null,
+  "final_artifact": "runs/G2_BitNet_dev/final_adapter",
+  "partial_metrics": null,
+  "reason": null,
+  "details": {
+    "final_adapter_backup": "runs/G2_BitNet_dev/backups/final_adapter_20260531T095354128828Z"
+  },
+  "updated_at": "2026-05-31T10:38:28.485254+00:00"
+}

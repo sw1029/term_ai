@@ -228,10 +228,10 @@ checkpoint 정보를 저장합니다. `SIGKILL`, 전원 종료, OS crash처럼 P
 - `B2`: mxbai + MLP
 - `B3`: reranker/cross-encoder
 - `B4`: API recheck fallback
-- `G0-Gemma`, `G0-Qwen`: zero-shot Small LM
-- `G1-Gemma`, `G1-Qwen`: raw train LoRA SFT
-- `G2-Gemma`, `G2-Qwen`: raw + judge-validated augmentation LoRA SFT
-- `G3-Gemma`, `G3-Qwen`: raw + aug + teacher score LoRA KD
+- `G0-Gemma`, `G0-Qwen`, `G0-BitNet`: zero-shot Small LM
+- `G1-Gemma`, `G1-Qwen`, `G1-BitNet`: raw train LoRA SFT
+- `G2-Gemma`, `G2-Qwen`, `G2-BitNet`: raw + judge-validated augmentation LoRA SFT
+- `G3-Gemma`, `G3-Qwen`, `G3-BitNet`: raw + aug + teacher score LoRA KD
 - `G4-8bit`: same G3 checkpoint quantization comparison wrapper
 - `E1`: embedding scorer KD
 - `H1`: hybrid scorer + fallback policy
@@ -247,6 +247,15 @@ G0/G4처럼 모델 경로가 필요한 경우:
   evaluation.split=dev `
   execution.local_cost_per_hour_usd=1.2
 ```
+
+BitNet은 `microsoft/bitnet-b1.58-2B-4T`를 기본으로 씁니다. 현재 지원 환경에서는
+Transformers의 네이티브 BitNet 로더를 사용하므로 기본 명령에
+`execution.trust_remote_code=true`를 넣지 않습니다. 이 플래그를 켜면 해당 HF repo의
+`auto_map`이 현재 존재하지 않는 원격 `configuration_bitnet.py`를 찾으면서 실패할 수
+있습니다.
+또한 BitNet은 자체 offline quantization checkpoint이므로 일반 G4 bitsandbytes
+8bit/4bit 비교와는 호환되지 않습니다. 일괄 스크립트는 기본적으로 BitNet G4를
+건너뛰며, G0~G3 BitNet 경로만 기본 실행합니다.
 
 G4는 G3 KD adapter manifest를 기본적으로 검증합니다.
 

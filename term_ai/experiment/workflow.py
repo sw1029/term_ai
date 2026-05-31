@@ -80,7 +80,17 @@ def _default_phase_jobs(config: dict[str, Any]) -> list[dict[str, Any]]:
     model_ids = auto_cfg.get("model_ids") or {}
     gemma_model = str(model_ids.get("gemma", "google/gemma-2-2b-it"))
     qwen_model = str(model_ids.get("qwen", "Qwen/Qwen2.5-3B-Instruct"))
+    bitnet_model = str(model_ids.get("bitnet", "microsoft/bitnet-b1.58-2B-4T"))
     jobs: list[dict[str, Any]] = []
+
+    def model_extras(experiment_id: str) -> list[str]:
+        if "Gemma" in experiment_id:
+            return [f"execution.model_name_or_path={gemma_model}"]
+        if "Qwen" in experiment_id:
+            return [f"execution.model_name_or_path={qwen_model}"]
+        if "BitNet" in experiment_id:
+            return [f"execution.model_name_or_path={bitnet_model}"]
+        return []
 
     if bool(auto_cfg.get("include_baselines", True)):
         jobs.extend(
@@ -110,9 +120,14 @@ def _default_phase_jobs(config: dict[str, Any]) -> list[dict[str, Any]]:
             {
                 "phase": 4,
                 "name": experiment_id,
-                "command": _auto_job_command(experiment_id, output_base / experiment_id, eval_split),
+                "command": _auto_job_command(
+                    experiment_id,
+                    output_base / experiment_id,
+                    eval_split,
+                    extra=model_extras(experiment_id),
+                ),
             }
-            for experiment_id in ("G0-Gemma", "G0-Qwen")
+            for experiment_id in ("G0-Gemma", "G0-Qwen", "G0-BitNet")
         )
 
     if bool(auto_cfg.get("include_lora_sft", True)):
@@ -120,9 +135,21 @@ def _default_phase_jobs(config: dict[str, Any]) -> list[dict[str, Any]]:
             {
                 "phase": 5,
                 "name": experiment_id,
-                "command": _auto_job_command(experiment_id, output_base / experiment_id, eval_split),
+                "command": _auto_job_command(
+                    experiment_id,
+                    output_base / experiment_id,
+                    eval_split,
+                    extra=model_extras(experiment_id),
+                ),
             }
-            for experiment_id in ("G1-Gemma", "G1-Qwen", "G2-Gemma", "G2-Qwen")
+            for experiment_id in (
+                "G1-Gemma",
+                "G1-Qwen",
+                "G1-BitNet",
+                "G2-Gemma",
+                "G2-Qwen",
+                "G2-BitNet",
+            )
         )
     prompt_cfg = auto_cfg.get("prompt_variation") or {}
     if bool(prompt_cfg.get("enabled", True)):
@@ -159,9 +186,14 @@ def _default_phase_jobs(config: dict[str, Any]) -> list[dict[str, Any]]:
             {
                 "phase": 6,
                 "name": experiment_id,
-                "command": _auto_job_command(experiment_id, output_base / experiment_id, eval_split),
+                "command": _auto_job_command(
+                    experiment_id,
+                    output_base / experiment_id,
+                    eval_split,
+                    extra=model_extras(experiment_id),
+                ),
             }
-            for experiment_id in ("G3-Gemma", "G3-Qwen")
+            for experiment_id in ("G3-Gemma", "G3-Qwen", "G3-BitNet")
         )
     kd_sweep_cfg = auto_cfg.get("kd_ablation") or {}
     if bool(kd_sweep_cfg.get("enabled", True)):
@@ -195,8 +227,12 @@ def _default_phase_jobs(config: dict[str, Any]) -> list[dict[str, Any]]:
 
     if bool(auto_cfg.get("include_quantization", True)):
         g4_source = str(auto_cfg.get("g4_source_experiment", "G3-Gemma"))
-        g4_model = gemma_model if "Gemma" in g4_source else qwen_model
+        g4_model = bitnet_model if "BitNet" in g4_source else gemma_model if "Gemma" in g4_source else qwen_model
         adapter = output_base / g4_source / "final_adapter"
+        g4_extra = [
+            f"execution.model_name_or_path={g4_model}",
+            f"execution.adapter_path={adapter}",
+        ]
         jobs.append(
             {
                 "phase": 7,
@@ -206,10 +242,7 @@ def _default_phase_jobs(config: dict[str, Any]) -> list[dict[str, Any]]:
                     "G4-8bit",
                     output_base / "G4",
                     eval_split,
-                    extra=[
-                        f"execution.model_name_or_path={g4_model}",
-                        f"execution.adapter_path={adapter}",
-                    ],
+                    extra=g4_extra,
                 ),
             }
         )

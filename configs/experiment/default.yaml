@@ -22,17 +22,23 @@ model:
   primary_small_models:
     - gemma2 2b
     - qwen2.5 3b
+    - bitnet b1.58 2b
   hf_model_ids:
     gemma2 2b: google/gemma-2-2b-it
     qwen2.5 3b: Qwen/Qwen2.5-3B-Instruct
+    bitnet b1.58 2b: microsoft/bitnet-b1.58-2B-4T
     G0-Gemma: google/gemma-2-2b-it
     G0-Qwen: Qwen/Qwen2.5-3B-Instruct
+    G0-BitNet: microsoft/bitnet-b1.58-2B-4T
     G1-Gemma: google/gemma-2-2b-it
     G1-Qwen: Qwen/Qwen2.5-3B-Instruct
+    G1-BitNet: microsoft/bitnet-b1.58-2B-4T
     G2-Gemma: google/gemma-2-2b-it
     G2-Qwen: Qwen/Qwen2.5-3B-Instruct
+    G2-BitNet: microsoft/bitnet-b1.58-2B-4T
     G3-Gemma: google/gemma-2-2b-it
     G3-Qwen: Qwen/Qwen2.5-3B-Instruct
+    G3-BitNet: microsoft/bitnet-b1.58-2B-4T
   experiment_id: B0
 
 execution:
@@ -54,6 +60,7 @@ execution:
   fallback_predictions: null
   model_name_or_path: null
   adapter_path: null
+  trust_remote_code: false
   prompt_mode: chat
   limit: null
   local_cost_per_hour_usd: 0.0
@@ -211,6 +218,7 @@ workflow:
       model_ids:
         gemma: google/gemma-2-2b-it
         qwen: Qwen/Qwen2.5-3B-Instruct
+        bitnet: microsoft/bitnet-b1.58-2B-4T
     explanation_judge:
       enabled: false
       judge_model: null

@@ -10,6 +10,17 @@ from term_ai.experiment.runner import create_run_dir, init_matrix, write_resume_
 from term_ai.experiment.workflow import run_master_workflow
 
 
+G1_G2_EXPERIMENTS = {
+    "G1-Gemma",
+    "G1-Qwen",
+    "G1-BitNet",
+    "G2-Gemma",
+    "G2-Qwen",
+    "G2-BitNet",
+}
+G3_EXPERIMENTS = {"G3-Gemma", "G3-Qwen", "G3-BitNet"}
+
+
 def _value(value: object) -> object | None:
     return None if value in {None, ""} else value
 
@@ -41,7 +52,7 @@ def _default_metadata(cfg: DictConfig, experiment_id: str) -> str:
         or experiment_id.startswith("G2")
     ):
         return str(cfg.execution.raw_metadata)
-    if experiment_id in {"E1", "G3-Gemma", "G3-Qwen"}:
+    if experiment_id in {"E1"} | G3_EXPERIMENTS:
         return str(cfg.execution.kd_metadata)
     if experiment_id.startswith("G4"):
         return str(cfg.execution.raw_metadata)
@@ -169,10 +180,11 @@ def main(cfg: DictConfig) -> None:
                 test_lock_dir=test_lock_dir,
                 local_cost_per_hour_usd=float(cfg.execution.local_cost_per_hour_usd),
                 prompt_mode=str(cfg.execution.prompt_mode),
+                trust_remote_code=bool(cfg.execution.trust_remote_code),
                 resume=execution_resume,
                 progress_interval_items=progress_interval_items,
             )
-        elif experiment_id in {"G1-Gemma", "G1-Qwen", "G2-Gemma", "G2-Qwen"}:
+        elif experiment_id in G1_G2_EXPERIMENTS:
             from term_ai.experiment.training import LoRATrainingConfig, train_lora_sft
 
             train_jsonl = _value(cfg.execution.train_sft_jsonl) or (
@@ -200,11 +212,12 @@ def main(cfg: DictConfig) -> None:
                     save_total_limit=int(cfg.training.save_total_limit),
                     eval_metadata=metadata,
                     eval_split=eval_split,
+                    trust_remote_code=bool(cfg.execution.trust_remote_code),
                     progress_interval_items=progress_interval_items,
                 )
             )
             result = {"final_adapter": str(adapter)}
-        elif experiment_id in {"G3-Gemma", "G3-Qwen"}:
+        elif experiment_id in G3_EXPERIMENTS:
             from term_ai.experiment.lora_kd import LoRAKDConfig, train_lora_sft_kd
 
             model_name_or_path = _model_name_or_path(cfg, experiment_id)
@@ -230,6 +243,7 @@ def main(cfg: DictConfig) -> None:
                     backup_checkpoints=bool(cfg.training.backup_checkpoints),
                     save_steps=_value(cfg.training.save_steps),
                     save_total_limit=int(cfg.training.save_total_limit),
+                    trust_remote_code=bool(cfg.execution.trust_remote_code),
                     progress_interval_items=progress_interval_items,
                 )
             )
@@ -254,6 +268,7 @@ def main(cfg: DictConfig) -> None:
                 test_lock_dir=test_lock_dir,
                 local_cost_per_hour_usd=float(cfg.execution.local_cost_per_hour_usd),
                 prompt_mode=str(cfg.execution.prompt_mode),
+                trust_remote_code=bool(cfg.execution.trust_remote_code),
                 resume=execution_resume,
                 progress_interval_items=progress_interval_items,
             )

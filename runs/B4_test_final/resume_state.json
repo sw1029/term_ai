@@ -1,0 +1,63 @@
+{
+  "status": "completed",
+  "stage": "completed",
+  "completed_count": 579,
+  "total_count": 579,
+  "latest_checkpoint": null,
+  "final_artifact": null,
+  "partial_metrics": {
+    "n": 579,
+    "accuracy": 0.998272884283247,
+    "macro_f1": 0.9982269280585491,
+    "classwise_f1": {
+      "A": 0.9964412811387899,
+      "B": 1.0,
+      "C": 1.0,
+      "D": 0.9964664310954063
+    },
+    "ece": 0.008549222797920919,
+    "brier_score": 0.001766321243523316,
+    "bootstrap_accuracy_95ci": [
+      0.9930915371329879,
+      1.0
+    ],
+    "task_counts": {
+      "Raw Meaning Selection": 579
+    },
+    "task_accuracy": {
+      "Raw Meaning Selection": 0.998272884283247
+    },
+    "parse_error_rate": 0.0,
+    "tokens_per_sec": 0.0,
+    "cost_per_1000_questions": 0.0,
+    "peak_VRAM_or_RAM": 0.0,
+    "peak_ram_mb": 563.1171875,
+    "cold_start_ms": 0.0,
+    "ops_metric_coverage": {
+      "latency_ms": 579,
+      "batch_size_1_latency_ms": 579,
+      "tokens_per_sec": 0,
+      "peak_vram_mb": 579,
+      "ram_mb": 579,
+      "estimated_cost_usd": 579,
+      "local_cost_per_hour_usd": 0,
+      "cold_start_ms": 0
+    },
+    "total_estimated_cost_usd": 0.0,
+    "latency_p50": 1054.5863220031606,
+    "latency_p95": 2168.0533350008773,
+    "batch_size_1_latency_p95": 2168.0533350008773,
+    "provider": "openai",
+    "model": "gpt-5.4-mini",
+    "fallback_only": true,
+    "fallback_rate": 0.5030408340573415,
+    "pricing_source": "not_configured"
+  },
+  "reason": null,
+  "details": {
+    "provider": "openai",
+    "model": "gpt-5.4-mini",
+    "pricing_source": "not_configured"
+  },
+  "updated_at": "2026-05-31T14:44:55.073824+00:00"
+}

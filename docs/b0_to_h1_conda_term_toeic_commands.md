@@ -40,6 +40,15 @@ DASHSCOPE_API_KEY=...
 HF_TOKEN=...
 ```
 
+BitNet 트랙은 Hugging Face `microsoft/bitnet-b1.58-2B-4T`를 기본 모델로 둡니다.
+현재 `term_toeic` 환경의 Transformers는 BitNet을 네이티브로 지원하므로 기본 명령에는
+`execution.trust_remote_code=true` 또는 `lm_eval --trust-remote-code`를 넣지 않습니다.
+이 플래그를 켜면 HF repo의 `auto_map`이 현재 존재하지 않는 원격
+`configuration_bitnet.py`를 찾으면서 실패할 수 있습니다.
+또한 BitNet checkpoint는 자체 offline quantization을 포함하므로 일반 G4
+bitsandbytes 8bit/4bit 비교와 호환되지 않을 수 있습니다. 일괄 실행 스크립트는
+기본적으로 BitNet G4를 건너뛰며, 필요할 때만 `RUN_BITNET_G4=1`로 탐색 실행합니다.
+
 ## 1. 입력 artifact 확인 및 재생성
 
 이미 `data/` 산출물이 있으면 이 섹션은 건너뛰어도 됩니다. 완전 재생성이 필요할 때만 실행합니다.
@@ -241,6 +250,14 @@ python -m term_ai.experiment.hydra_app \
   execution.model_name_or_path=Qwen/Qwen2.5-3B-Instruct \
   evaluation.split=dev \
   execution.local_cost_per_hour_usd=0
+
+python -m term_ai.experiment.hydra_app \
+  execution.run=true \
+  model.experiment_id=G0-BitNet \
+  execution.output_dir=runs/G0_BitNet_dev \
+  execution.model_name_or_path=microsoft/bitnet-b1.58-2B-4T \
+  evaluation.split=dev \
+  execution.local_cost_per_hour_usd=0
 ```
 
 ## 5. Dev split: G1 raw LoRA SFT
@@ -263,6 +280,14 @@ python -m term_ai.experiment.hydra_app \
   execution.model_name_or_path=Qwen/Qwen2.5-3B-Instruct \
   evaluation.split=dev \
   training.save_total_limit=3
+
+python -m term_ai.experiment.hydra_app \
+  execution.run=true \
+  model.experiment_id=G1-BitNet \
+  execution.output_dir=runs/G1_BitNet_dev \
+  execution.model_name_or_path=microsoft/bitnet-b1.58-2B-4T \
+  evaluation.split=dev \
+  training.save_total_limit=3
 ```
 
 주요 산출물:
@@ -271,6 +296,8 @@ python -m term_ai.experiment.hydra_app \
 - `runs/G1_Gemma_dev/post_train_eval/prediction_log.jsonl`
 - `runs/G1_Qwen_dev/final_adapter`
 - `runs/G1_Qwen_dev/post_train_eval/prediction_log.jsonl`
+- `runs/G1_BitNet_dev/final_adapter`
+- `runs/G1_BitNet_dev/post_train_eval/prediction_log.jsonl`
 
 ## 6. Dev split: G2 raw + judge-validated augmentation LoRA SFT
 
@@ -290,6 +317,14 @@ python -m term_ai.experiment.hydra_app \
   execution.model_name_or_path=Qwen/Qwen2.5-3B-Instruct \
   evaluation.split=dev \
   training.save_total_limit=3
+
+python -m term_ai.experiment.hydra_app \
+  execution.run=true \
+  model.experiment_id=G2-BitNet \
+  execution.output_dir=runs/G2_BitNet_dev \
+  execution.model_name_or_path=microsoft/bitnet-b1.58-2B-4T \
+  evaluation.split=dev \
+  training.save_total_limit=3
 ```
 
 주요 산출물:
@@ -298,6 +333,8 @@ python -m term_ai.experiment.hydra_app \
 - `runs/G2_Gemma_dev/post_train_eval/prediction_log.jsonl`
 - `runs/G2_Qwen_dev/final_adapter`
 - `runs/G2_Qwen_dev/post_train_eval/prediction_log.jsonl`
+- `runs/G2_BitNet_dev/final_adapter`
+- `runs/G2_BitNet_dev/post_train_eval/prediction_log.jsonl`
 
 ## 7. Dev split: G3 raw + aug + teacher score LoRA KD
 
@@ -329,6 +366,19 @@ python -m term_ai.experiment.hydra_app \
   training.kd.lambda_soft=0.5 \
   training.kd.include_rationale=true \
   training.kd.require_teacher_scores=true
+
+python -m term_ai.experiment.hydra_app \
+  execution.run=true \
+  model.experiment_id=G3-BitNet \
+  execution.output_dir=runs/G3_BitNet_dev \
+  execution.model_name_or_path=microsoft/bitnet-b1.58-2B-4T \
+  execution.kd_metadata=data/metadata/kd_train_view_v1.jsonl \
+  execution.kd_dev_metadata=data/metadata/kd_dev_view_v1.jsonl \
+  execution.min_status=any \
+  evaluation.split=dev \
+  training.kd.lambda_soft=0.5 \
+  training.kd.include_rationale=true \
+  training.kd.require_teacher_scores=true
 ```
 
 G3 자체의 dev prediction log가 필요하면 학습 완료 후 adapter를 별도로 평가합니다.
@@ -351,6 +401,15 @@ python -m term_ai.experiment.lm_eval \
   --eval-split dev \
   --min-status raw_gt \
   --experiment-id G3-Qwen
+
+python -m term_ai.experiment.lm_eval \
+  --metadata data/metadata/raw_mcq_v1.jsonl \
+  --output-dir runs/G3_BitNet_dev/post_train_eval \
+  --model-name-or-path microsoft/bitnet-b1.58-2B-4T \
+  --adapter-path runs/G3_BitNet_dev/final_adapter \
+  --eval-split dev \
+  --min-status raw_gt \
+  --experiment-id G3-BitNet
 ```
 
 ## 8. Dev split: G4 quantization comparison
@@ -381,12 +440,26 @@ python -m term_ai.experiment.hydra_app \
   execution.local_cost_per_hour_usd=0
 ```
 
+BitNet G3 checkpoint 기준:
+
+```bash
+python -m term_ai.experiment.hydra_app \
+  execution.run=true \
+  model.experiment_id=G4-8bit \
+  execution.output_dir=runs/G4_BitNet_dev \
+  execution.model_name_or_path=microsoft/bitnet-b1.58-2B-4T \
+  execution.adapter_path=runs/G3_BitNet_dev/final_adapter \
+  evaluation.split=dev \
+  execution.local_cost_per_hour_usd=0
+```
+
 주요 산출물:
 
 - `runs/G4_Gemma_dev/fp16/prediction_log.jsonl`
 - `runs/G4_Gemma_dev/8bit/prediction_log.jsonl`
 - `runs/G4_Gemma_dev/4bit/prediction_log.jsonl`
 - `runs/G4_Gemma_dev/quantization_compare.json`
+- `runs/G4_BitNet_dev/quantization_compare.json`
 
 ## 9. Dev split: E1 embedding scorer KD
 
@@ -512,6 +585,14 @@ python -m term_ai.experiment.hydra_app \
   execution.model_name_or_path=Qwen/Qwen2.5-3B-Instruct \
   evaluation.split=test \
   execution.test_lock_dir=runs/_test_locks
+
+python -m term_ai.experiment.hydra_app \
+  execution.run=true \
+  model.experiment_id=G0-BitNet \
+  execution.output_dir=runs/G0_BitNet_test_final \
+  execution.model_name_or_path=microsoft/bitnet-b1.58-2B-4T \
+  evaluation.split=test \
+  execution.test_lock_dir=runs/_test_locks
 ```
 
 ### 11.3 G1/G2/G3 adapter final test
@@ -541,6 +622,16 @@ python -m term_ai.experiment.lm_eval \
 
 python -m term_ai.experiment.lm_eval \
   --metadata data/metadata/raw_mcq_v1.jsonl \
+  --output-dir runs/G1_BitNet_test_final \
+  --model-name-or-path microsoft/bitnet-b1.58-2B-4T \
+  --adapter-path runs/G1_BitNet_dev/final_adapter \
+  --eval-split test \
+  --min-status raw_gt \
+  --experiment-id G1-BitNet \
+  --test-lock-dir runs/_test_locks
+
+python -m term_ai.experiment.lm_eval \
+  --metadata data/metadata/raw_mcq_v1.jsonl \
   --output-dir runs/G2_Gemma_test_final \
   --model-name-or-path google/gemma-2-2b-it \
   --adapter-path runs/G2_Gemma_dev/final_adapter \
@@ -557,6 +648,16 @@ python -m term_ai.experiment.lm_eval \
   --eval-split test \
   --min-status raw_gt \
   --experiment-id G2-Qwen \
+  --test-lock-dir runs/_test_locks
+
+python -m term_ai.experiment.lm_eval \
+  --metadata data/metadata/raw_mcq_v1.jsonl \
+  --output-dir runs/G2_BitNet_test_final \
+  --model-name-or-path microsoft/bitnet-b1.58-2B-4T \
+  --adapter-path runs/G2_BitNet_dev/final_adapter \
+  --eval-split test \
+  --min-status raw_gt \
+  --experiment-id G2-BitNet \
   --test-lock-dir runs/_test_locks
 
 python -m term_ai.experiment.lm_eval \
@@ -578,11 +679,21 @@ python -m term_ai.experiment.lm_eval \
   --min-status raw_gt \
   --experiment-id G3-Qwen \
   --test-lock-dir runs/_test_locks
+
+python -m term_ai.experiment.lm_eval \
+  --metadata data/metadata/raw_mcq_v1.jsonl \
+  --output-dir runs/G3_BitNet_test_final \
+  --model-name-or-path microsoft/bitnet-b1.58-2B-4T \
+  --adapter-path runs/G3_BitNet_dev/final_adapter \
+  --eval-split test \
+  --min-status raw_gt \
+  --experiment-id G3-BitNet \
+  --test-lock-dir runs/_test_locks
 ```
 
 ### 11.4 G4 final test
 
-G4 final test는 최종 비교 대상으로 선택한 G3 checkpoint 하나를 기준으로 실행합니다. 현재 G4 runner의 final-test lock은 `G4` family 단위라서 Gemma와 Qwen을 모두 test에서 실행하려면 두 번째 실행에는 `execution.allow_repeat_test=true`가 필요하며, 그 사실을 보고서에 남겨야 합니다.
+G4 final test는 최종 비교 대상으로 선택한 G3 checkpoint 하나를 기준으로 실행합니다. 현재 G4 runner의 final-test lock은 `G4` family 단위라서 Gemma, Qwen, BitNet을 둘 이상 test에서 실행하려면 두 번째 실행부터 `execution.allow_repeat_test=true`가 필요하며, 그 사실을 보고서에 남겨야 합니다.
 
 Gemma G3 checkpoint를 선택한 경우:
 
@@ -606,6 +717,19 @@ python -m term_ai.experiment.hydra_app \
   execution.output_dir=runs/G4_Qwen_test_final \
   execution.model_name_or_path=Qwen/Qwen2.5-3B-Instruct \
   execution.adapter_path=runs/G3_Qwen_dev/final_adapter \
+  evaluation.split=test \
+  execution.test_lock_dir=runs/_test_locks
+```
+
+BitNet G3 checkpoint를 선택한 경우:
+
+```bash
+python -m term_ai.experiment.hydra_app \
+  execution.run=true \
+  model.experiment_id=G4-8bit \
+  execution.output_dir=runs/G4_BitNet_test_final \
+  execution.model_name_or_path=microsoft/bitnet-b1.58-2B-4T \
+  execution.adapter_path=runs/G3_BitNet_dev/final_adapter \
   evaluation.split=test \
   execution.test_lock_dir=runs/_test_locks
 ```
@@ -656,6 +780,12 @@ python -m term_ai.experiment.statistics \
   --predictions-a runs/B3_test_final/prediction_log.jsonl \
   --predictions-b runs/G3_Gemma_test_final/prediction_log.jsonl \
   --output reports/B3_vs_G3_Gemma_test_statistics.json \
+  --samples 1000
+
+python -m term_ai.experiment.statistics \
+  --predictions-a runs/B3_test_final/prediction_log.jsonl \
+  --predictions-b runs/G3_BitNet_test_final/prediction_log.jsonl \
+  --output reports/B3_vs_G3_BitNet_test_statistics.json \
   --samples 1000
 
 python -m term_ai.experiment.statistics \

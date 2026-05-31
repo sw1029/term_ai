@@ -16,6 +16,13 @@ from term_ai.experiment.mcq import (
     parse_answer_response,
     prediction_row,
 )
+from term_ai.experiment.hf_loading import (
+    bitnet_loading_config,
+    clear_bitnet_quantization_training_guard,
+    from_pretrained_with_trust,
+    is_bitnet_config,
+    repair_bitnet_autobitlinear_weights,
+)
 from term_ai.experiment.ops import memory_snapshot, timed, tokens_per_second
 from term_ai.experiment.progress import InterruptGuard, ProgressLogger
 from term_ai.experiment.test_lock import enforce_final_test_once
@@ -35,6 +42,31 @@ def _format_eval_prompt(tokenizer: Any, item: MCQItem, prompt_mode: str) -> tupl
         return item.prompt(), "plain_fallback_chat_template_error"
 
 
+def _generation_pad_token_id(tokenizer: Any) -> int | None:
+    for attr in ("pad_token_id", "eos_token_id"):
+        value = getattr(tokenizer, attr, None)
+        if isinstance(value, int):
+            return value
+    return None
+
+
+def _clear_generation_max_length(model: Any) -> None:
+    generation_config = getattr(model, "generation_config", None)
+    if generation_config is not None and hasattr(generation_config, "max_length"):
+        generation_config.max_length = None
+
+
+def _decode_generated_text(tokenizer: Any, token_ids: Any) -> str:
+    try:
+        return tokenizer.decode(
+            token_ids,
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=False,
+        )
+    except TypeError:
+        return tokenizer.decode(token_ids, skip_special_tokens=True)
+
+
 def run_hf_zero_shot(
     metadata_path: str | Path,
     output_dir: str | Path,
@@ -50,6 +82,7 @@ def run_hf_zero_shot(
     test_lock_dir: str | Path | None = None,
     local_cost_per_hour_usd: float = 0.0,
     prompt_mode: str = "chat",
+    trust_remote_code: bool = False,
     resume: bool = True,
     progress_interval_items: int = 1,
 ) -> dict[str, Any]:
@@ -82,12 +115,25 @@ def run_hf_zero_shot(
 
     try:
         import torch
-        from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+        from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
     except ImportError as exc:
         raise RuntimeError("Install train dependencies first: pip install -e .[train]") from exc
 
     cold_start_begin = time.perf_counter()
-    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+    model_config = from_pretrained_with_trust(AutoConfig, model_name_or_path, trust_remote_code)
+    is_bitnet = is_bitnet_config(model_config)
+    if is_bitnet and quantization in {"8bit", "4bit"}:
+        raise ValueError(
+            "BitNet checkpoints are already BitNet-quantized and cannot be evaluated with "
+            "bitsandbytes 8bit/4bit G4 modes. Set RUN_BITNET_G4=0 for the batch runner."
+        )
+    model_config = bitnet_loading_config(model_config, for_lora=adapter_path is not None)
+    tokenizer = from_pretrained_with_trust(
+        AutoTokenizer,
+        model_name_or_path,
+        trust_remote_code,
+        **({"fix_mistral_regex": True} if is_bitnet else {}),
+    )
     quant_config = None
     if quantization == "8bit":
         quant_config = BitsAndBytesConfig(load_in_8bit=True)
@@ -99,9 +145,18 @@ def run_hf_zero_shot(
     model_kwargs: dict[str, Any] = {"device_map": "auto"}
     if quant_config is not None:
         model_kwargs["quantization_config"] = quant_config
-    elif torch.cuda.is_available():
-        model_kwargs["torch_dtype"] = torch.float16
-    model = AutoModelForCausalLM.from_pretrained(model_name_or_path, **model_kwargs)
+    elif torch.cuda.is_available() and not is_bitnet:
+        model_kwargs["dtype"] = torch.float16
+    model_kwargs["config"] = model_config
+    model = from_pretrained_with_trust(
+        AutoModelForCausalLM,
+        model_name_or_path,
+        trust_remote_code,
+        **model_kwargs,
+    )
+    repair_bitnet_autobitlinear_weights(model)
+    clear_bitnet_quantization_training_guard(model)
+    _clear_generation_max_length(model)
     if adapter_path is not None:
         try:
             from peft import PeftModel
@@ -110,6 +165,7 @@ def run_hf_zero_shot(
         model = PeftModel.from_pretrained(model, str(adapter_path))
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+    pad_token_id = _generation_pad_token_id(tokenizer)
     cold_start_ms = (time.perf_counter() - cold_start_begin) * 1000
 
     with InterruptGuard(progress, stage=f"{lock_experiment_id}:eval"):
@@ -118,11 +174,17 @@ def run_hf_zero_shot(
                 continue
             prompt, prompt_mode_effective = _format_eval_prompt(tokenizer, item, prompt_mode)
             inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+            generation_kwargs: dict[str, Any] = {
+                "max_new_tokens": max_new_tokens,
+                "do_sample": False,
+            }
+            if pad_token_id is not None:
+                generation_kwargs["pad_token_id"] = pad_token_id
             with timed() as state:
                 with torch.no_grad():
-                    output = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
+                    output = model.generate(**inputs, **generation_kwargs)
             new_tokens = int(output.shape[-1] - inputs["input_ids"].shape[-1])
-            text = tokenizer.decode(output[0][inputs["input_ids"].shape[-1] :], skip_special_tokens=True)
+            text = _decode_generated_text(tokenizer, output[0][inputs["input_ids"].shape[-1] :])
             parsed = parse_answer_response(text)
             progress.append_prediction(
                 prediction_row(
@@ -162,6 +224,7 @@ def run_hf_zero_shot(
     metrics["parser_version"] = PARSER_VERSION
     metrics["prompt_contract_version"] = PROMPT_CONTRACT_VERSION
     metrics["prompt_mode"] = prompt_mode
+    metrics["trust_remote_code"] = trust_remote_code
     prompt_modes = sorted({str(row.get("prompt_mode_effective")) for row in predictions})
     metrics["prompt_mode_effective"] = prompt_modes[0] if len(prompt_modes) == 1 else prompt_modes
     progress.finalize_predictions(
@@ -195,6 +258,7 @@ def main() -> None:
     parser.add_argument("--test-lock-dir")
     parser.add_argument("--local-cost-per-hour-usd", type=float, default=0.0)
     parser.add_argument("--prompt-mode", choices=["chat", "plain"], default="chat")
+    parser.add_argument("--trust-remote-code", action="store_true")
     parser.add_argument("--allow-repeat-test", action="store_true")
     parser.add_argument("--no-resume", action="store_true")
     parser.add_argument("--progress-interval-items", type=int, default=1)
@@ -214,6 +278,7 @@ def main() -> None:
         test_lock_dir=args.test_lock_dir,
         local_cost_per_hour_usd=args.local_cost_per_hour_usd,
         prompt_mode=args.prompt_mode,
+        trust_remote_code=args.trust_remote_code,
         resume=not args.no_resume,
         progress_interval_items=args.progress_interval_items,
     )

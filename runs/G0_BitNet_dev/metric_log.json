@@ -1,0 +1,53 @@
+{
+  "n": 1170,
+  "accuracy": 0.0,
+  "macro_f1": 0.0,
+  "classwise_f1": {
+    "A": 0.0,
+    "B": 0.0,
+    "C": 0.0,
+    "D": 0.0,
+    "PARSE_ERROR": 0.0
+  },
+  "ece": 0.0,
+  "brier_score": 0.0,
+  "bootstrap_accuracy_95ci": [
+    0.0,
+    0.0
+  ],
+  "task_counts": {
+    "Raw Meaning Selection": 1170
+  },
+  "task_accuracy": {
+    "Raw Meaning Selection": 0.0
+  },
+  "parse_error_rate": 1.0,
+  "tokens_per_sec": 19.111495826061212,
+  "cost_per_1000_questions": 0.0,
+  "peak_VRAM_or_RAM": 1220.22998046875,
+  "peak_ram_mb": 2094.69140625,
+  "cold_start_ms": 6240.317696000147,
+  "ops_metric_coverage": {
+    "latency_ms": 1170,
+    "batch_size_1_latency_ms": 1170,
+    "tokens_per_sec": 1170,
+    "peak_vram_mb": 1170,
+    "ram_mb": 1170,
+    "estimated_cost_usd": 0,
+    "local_cost_per_hour_usd": 1170,
+    "cold_start_ms": 1170
+  },
+  "total_estimated_cost_usd": 0.0,
+  "latency_p50": 3343.3723610000925,
+  "latency_p95": 3379.677162999542,
+  "batch_size_1_latency_p95": 3379.677162999542,
+  "adapter_path": null,
+  "quantization": "fp16",
+  "model_name_or_path": "microsoft/bitnet-b1.58-2B-4T",
+  "local_cost_per_hour_usd": 0.0,
+  "parser_version": "mcq_answer_parser_v2",
+  "prompt_contract_version": "mcq_answer_json_v2",
+  "prompt_mode": "chat",
+  "trust_remote_code": false,
+  "prompt_mode_effective": "chat"
+}

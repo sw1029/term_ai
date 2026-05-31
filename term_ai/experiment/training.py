@@ -7,6 +7,13 @@ import json
 from pathlib import Path
 from typing import Any
 
+from term_ai.experiment.hf_loading import (
+    bitnet_loading_config,
+    clear_bitnet_quantization_training_guard,
+    from_pretrained_with_trust,
+    is_bitnet_config,
+    repair_bitnet_autobitlinear_weights,
+)
 from term_ai.experiment.mcq import parse_answer_response
 from term_ai.experiment.progress import (
     InterruptGuard,
@@ -15,6 +22,16 @@ from term_ai.experiment.progress import (
     resolve_latest_checkpoint,
     utc_timestamp,
 )
+
+BITNET_LORA_TARGET_MODULES = [
+    "q_proj",
+    "k_proj",
+    "v_proj",
+    "o_proj",
+    "gate_proj",
+    "up_proj",
+    "down_proj",
+]
 
 
 @dataclass
@@ -31,6 +48,7 @@ class LoRATrainingConfig:
     lora_r: int = 8
     lora_alpha: int = 16
     lora_dropout: float = 0.05
+    lora_target_modules: list[str] | None = None
     resume_from_checkpoint: str | None = None
     resume: bool = True
     backup_weights: bool = True
@@ -40,6 +58,7 @@ class LoRATrainingConfig:
     early_stopping_patience: int | None = 2
     eval_metadata: str | None = None
     eval_split: str = "dev"
+    trust_remote_code: bool = False
     progress_interval_items: int = 1
 
 
@@ -176,6 +195,15 @@ def _trainer_tokenizer_kwargs(trainer_cls: type, tokenizer: Any) -> dict[str, An
     return {}
 
 
+def _resolve_lora_target_modules(model: Any, explicit: list[str] | None = None) -> list[str] | None:
+    if explicit:
+        return list(explicit)
+    model_type = str(getattr(getattr(model, "config", None), "model_type", "") or "").lower()
+    if model_type == "bitnet":
+        return list(BITNET_LORA_TARGET_MODULES)
+    return None
+
+
 def _make_trainer_progress_callback(
     trainer_callback_cls: type,
     progress: ProgressLogger,
@@ -268,6 +296,7 @@ def train_lora_sft(config: LoRATrainingConfig) -> Path:
         from datasets import Dataset
         from peft import LoraConfig, get_peft_model
         from transformers import (
+            AutoConfig,
             AutoModelForCausalLM,
             AutoTokenizer,
             EarlyStoppingCallback,
@@ -293,7 +322,16 @@ def train_lora_sft(config: LoRATrainingConfig) -> Path:
     train_rows = _read_messages_jsonl(config.train_jsonl)
     dev_rows = _read_messages_jsonl(config.dev_jsonl)
 
-    tokenizer = AutoTokenizer.from_pretrained(config.model_name_or_path, use_fast=True)
+    model_config = from_pretrained_with_trust(AutoConfig, config.model_name_or_path, config.trust_remote_code)
+    is_bitnet = is_bitnet_config(model_config)
+    model_config = bitnet_loading_config(model_config, for_lora=True)
+    tokenizer = from_pretrained_with_trust(
+        AutoTokenizer,
+        config.model_name_or_path,
+        config.trust_remote_code,
+        use_fast=True,
+        **({"fix_mistral_regex": True} if is_bitnet else {}),
+    )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
@@ -313,15 +351,24 @@ def train_lora_sft(config: LoRATrainingConfig) -> Path:
     train_dataset = Dataset.from_list(train_rows).map(tokenize_batch, batched=True, remove_columns=["messages"])
     dev_dataset = Dataset.from_list(dev_rows).map(tokenize_batch, batched=True, remove_columns=["messages"])
 
-    model = AutoModelForCausalLM.from_pretrained(config.model_name_or_path)
+    model = from_pretrained_with_trust(
+        AutoModelForCausalLM,
+        config.model_name_or_path,
+        config.trust_remote_code,
+        config=model_config,
+    )
+    repair_bitnet_autobitlinear_weights(model)
+    clear_bitnet_quantization_training_guard(model)
     lora_config = LoraConfig(
         r=config.lora_r,
         lora_alpha=config.lora_alpha,
         lora_dropout=config.lora_dropout,
         bias="none",
         task_type="CAUSAL_LM",
+        target_modules=_resolve_lora_target_modules(model, config.lora_target_modules),
     )
     model = get_peft_model(model, lora_config)
+    clear_bitnet_quantization_training_guard(model)
 
     training_kwargs = {
         "output_dir": str(output_dir / "checkpoints"),
@@ -330,7 +377,6 @@ def train_lora_sft(config: LoRATrainingConfig) -> Path:
         "gradient_accumulation_steps": config.gradient_accumulation_steps,
         "learning_rate": config.learning_rate,
         "num_train_epochs": config.epochs,
-        "logging_dir": str(output_dir / "logs"),
         "logging_steps": 10,
         "save_strategy": "steps" if config.save_steps is not None else "epoch",
         "save_total_limit": config.save_total_limit,
@@ -424,6 +470,7 @@ def train_lora_sft(config: LoRATrainingConfig) -> Path:
             eval_split=config.eval_split,
             adapter_path=output_dir / "final_adapter",
             final_test_once=False,
+            trust_remote_code=config.trust_remote_code,
             resume=config.resume,
             progress_interval_items=config.progress_interval_items,
         )
@@ -454,6 +501,7 @@ def main() -> None:
     parser.add_argument("--lora-r", type=int, default=8)
     parser.add_argument("--lora-alpha", type=int, default=16)
     parser.add_argument("--lora-dropout", type=float, default=0.05)
+    parser.add_argument("--lora-target-modules", nargs="+")
     parser.add_argument("--resume-from-checkpoint")
     parser.add_argument("--no-resume", action="store_true")
     parser.add_argument("--early-stopping-patience", type=int, default=2)
@@ -463,6 +511,7 @@ def main() -> None:
     parser.add_argument("--save-total-limit", type=int, default=3)
     parser.add_argument("--eval-metadata")
     parser.add_argument("--eval-split", default="dev")
+    parser.add_argument("--trust-remote-code", action="store_true")
     parser.add_argument("--progress-interval-items", type=int, default=1)
     args = parser.parse_args()
     adapter = train_lora_sft(
@@ -479,6 +528,7 @@ def main() -> None:
             lora_r=args.lora_r,
             lora_alpha=args.lora_alpha,
             lora_dropout=args.lora_dropout,
+            lora_target_modules=args.lora_target_modules,
             resume_from_checkpoint=args.resume_from_checkpoint,
             resume=not args.no_resume,
             backup_weights=not args.no_weight_backup,
@@ -488,6 +538,7 @@ def main() -> None:
             early_stopping_patience=args.early_stopping_patience,
             eval_metadata=args.eval_metadata,
             eval_split=args.eval_split,
+            trust_remote_code=args.trust_remote_code,
             progress_interval_items=args.progress_interval_items,
         )
     )

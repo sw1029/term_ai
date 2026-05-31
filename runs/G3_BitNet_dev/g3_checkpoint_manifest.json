@@ -1,0 +1,15 @@
+{
+  "experiment_family": "G3",
+  "checkpoint_type": "lora_sft_kd",
+  "final_adapter": "runs/G3_BitNet_dev/final_adapter",
+  "model_name_or_path": "microsoft/bitnet-b1.58-2B-4T",
+  "metadata_jsonl": "data/metadata/kd_train_view_v1.jsonl",
+  "dev_metadata_jsonl": "data/metadata/kd_dev_view_v1.jsonl",
+  "lambda_soft": 0.5,
+  "hard_label_only": false,
+  "include_rationale": true,
+  "response_format": "json_distribution",
+  "trust_remote_code": false,
+  "latest_checkpoint": "runs/G3_BitNet_dev/checkpoints/checkpoint-2172",
+  "final_adapter_backup": "runs/G3_BitNet_dev/backups/final_adapter_20260531T113208160815Z"
+}
