@@ -1,31 +1,31 @@
 {
   "n": 1151,
-  "accuracy": 0.9904430929626412,
-  "macro_f1": 0.9904674729259535,
+  "accuracy": 0.9947871416159861,
+  "macro_f1": 0.9947399832856585,
   "classwise_f1": {
-    "A": 0.9814126394052044,
-    "B": 0.9873417721518988,
-    "C": 0.99812382739212,
-    "D": 0.994991652754591
+    "A": 0.9962962962962963,
+    "B": 0.9968152866242038,
+    "C": 0.9925373134328358,
+    "D": 0.9933110367892978
   },
-  "ece": 0.9755864465682016,
-  "brier_score": 0.9741007819287576,
+  "ece": 0.09319721980887608,
+  "brier_score": 0.0138892267593397,
   "bootstrap_accuracy_95ci": [
-    0.9843614248479583,
-    0.9956559513466551
+    0.9904430929626412,
+    0.998262380538662
   ],
   "task_counts": {
     "Raw Meaning Selection": 1151
   },
   "task_accuracy": {
-    "Raw Meaning Selection": 0.9904430929626412
+    "Raw Meaning Selection": 0.9947871416159861
   },
   "parse_error_rate": 0.0,
-  "tokens_per_sec": 25.49197190436578,
+  "tokens_per_sec": 26.522483029182403,
   "cost_per_1000_questions": 0.0,
-  "peak_VRAM_or_RAM": 5943.2255859375,
-  "peak_ram_mb": 2319.33203125,
-  "cold_start_ms": 3744.9371430047904,
+  "peak_VRAM_or_RAM": 5061.9111328125,
+  "peak_ram_mb": 2469.421875,
+  "cold_start_ms": 4128.204665001249,
   "ops_metric_coverage": {
     "latency_ms": 1151,
     "batch_size_1_latency_ms": 1151,
@@ -37,12 +37,12 @@
     "cold_start_ms": 1151
   },
   "total_estimated_cost_usd": 0.0,
-  "latency_p50": 2501.8258780037286,
-  "latency_p95": 2552.435006997257,
-  "batch_size_1_latency_p95": 2552.435006997257,
-  "adapter_path": null,
+  "latency_p50": 2410.3388849980547,
+  "latency_p95": 2446.667570999125,
+  "batch_size_1_latency_p95": 2446.667570999125,
+  "adapter_path": "runs/G3_Gemma_dev/final_adapter",
   "quantization": "fp16",
-  "model_name_or_path": "Qwen/Qwen2.5-3B-Instruct",
+  "model_name_or_path": "google/gemma-2-2b-it",
   "local_cost_per_hour_usd": 0.0,
   "parser_version": "mcq_answer_parser_v2",
   "prompt_contract_version": "mcq_answer_json_v2",

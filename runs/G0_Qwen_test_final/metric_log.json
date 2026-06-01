@@ -48,6 +48,5 @@
   "prompt_contract_version": "mcq_answer_json_v2",
   "prompt_mode": "chat",
   "trust_remote_code": false,
-  "prompt_mode_effective": "chat",
-  "partial": false
+  "prompt_mode_effective": "chat"
 }

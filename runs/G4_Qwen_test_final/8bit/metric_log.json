@@ -1,31 +1,31 @@
 {
   "n": 1151,
-  "accuracy": 0.9904430929626412,
-  "macro_f1": 0.9904674729259535,
+  "accuracy": 0.998262380538662,
+  "macro_f1": 0.998260644416561,
   "classwise_f1": {
-    "A": 0.9814126394052044,
-    "B": 0.9873417721518988,
-    "C": 0.99812382739212,
-    "D": 0.994991652754591
+    "A": 0.9962962962962963,
+    "B": 0.9984101748807631,
+    "C": 1.0,
+    "D": 0.9983361064891847
   },
-  "ece": 0.9755864465682016,
-  "brier_score": 0.9741007819287576,
+  "ece": 8.688097306663867e-05,
+  "brier_score": 0.0017115551694178975,
   "bootstrap_accuracy_95ci": [
-    0.9843614248479583,
-    0.9956559513466551
+    0.9956559513466551,
+    1.0
   ],
   "task_counts": {
     "Raw Meaning Selection": 1151
   },
   "task_accuracy": {
-    "Raw Meaning Selection": 0.9904430929626412
+    "Raw Meaning Selection": 0.998262380538662
   },
   "parse_error_rate": 0.0,
-  "tokens_per_sec": 25.49197190436578,
+  "tokens_per_sec": 12.544914546584682,
   "cost_per_1000_questions": 0.0,
-  "peak_VRAM_or_RAM": 5943.2255859375,
-  "peak_ram_mb": 2319.33203125,
-  "cold_start_ms": 3744.9371430047904,
+  "peak_VRAM_or_RAM": 5950.2568359375,
+  "peak_ram_mb": 2776.02734375,
+  "cold_start_ms": 32917.5476370001,
   "ops_metric_coverage": {
     "latency_ms": 1151,
     "batch_size_1_latency_ms": 1151,
@@ -37,17 +37,16 @@
     "cold_start_ms": 1151
   },
   "total_estimated_cost_usd": 0.0,
-  "latency_p50": 2501.8258780037286,
-  "latency_p95": 2552.435006997257,
-  "batch_size_1_latency_p95": 2552.435006997257,
-  "adapter_path": null,
-  "quantization": "fp16",
+  "latency_p50": 5058.53881900839,
+  "latency_p95": 5527.3950370028615,
+  "batch_size_1_latency_p95": 5527.3950370028615,
+  "adapter_path": "runs/G3_Qwen_dev/final_adapter",
+  "quantization": "8bit",
   "model_name_or_path": "Qwen/Qwen2.5-3B-Instruct",
   "local_cost_per_hour_usd": 0.0,
   "parser_version": "mcq_answer_parser_v2",
   "prompt_contract_version": "mcq_answer_json_v2",
   "prompt_mode": "chat",
   "trust_remote_code": false,
-  "prompt_mode_effective": "chat",
-  "partial": false
+  "prompt_mode_effective": "chat"
 }

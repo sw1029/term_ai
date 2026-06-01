@@ -1,0 +1,7 @@
+{
+  "experiment_id": "G3-Gemma",
+  "eval_split": "test",
+  "output_dir": "runs/G3_Gemma_test_final",
+  "locked_at": "2026-05-31T20:34:42.388292+00:00",
+  "policy": "final test can be evaluated only once unless the lock is explicitly removed"
+}

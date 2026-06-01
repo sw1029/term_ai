@@ -1,0 +1,7 @@
+{
+  "experiment_id": "E1",
+  "eval_split": "test",
+  "output_dir": "runs/E1_test_final",
+  "locked_at": "2026-06-01T06:24:40.798551+00:00",
+  "policy": "final test can be evaluated only once unless the lock is explicitly removed"
+}
