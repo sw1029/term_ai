@@ -1,0 +1,26 @@
+[
+  {
+    "model_id": "Qwen/Qwen2.5-3B-Instruct",
+    "status": "cached",
+    "cache_dir": "/home/swfool/.cache/huggingface/hub",
+    "cached_path": "/home/swfool/.cache/huggingface/hub/models--Qwen--Qwen2.5-3B-Instruct",
+    "verified": true,
+    "error": null
+  },
+  {
+    "model_id": "Qwen/Qwen2.5-0.5B-Instruct",
+    "status": "cached",
+    "cache_dir": "/home/swfool/.cache/huggingface/hub",
+    "cached_path": "/home/swfool/.cache/huggingface/hub/models--Qwen--Qwen2.5-0.5B-Instruct",
+    "verified": true,
+    "error": null
+  },
+  {
+    "model_id": "Qwen/Qwen2.5-1.5B-Instruct",
+    "status": "cached",
+    "cache_dir": "/home/swfool/.cache/huggingface/hub",
+    "cached_path": "/home/swfool/.cache/huggingface/hub/models--Qwen--Qwen2.5-1.5B-Instruct",
+    "verified": true,
+    "error": null
+  }
+]

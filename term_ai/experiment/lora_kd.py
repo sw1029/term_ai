@@ -40,6 +40,7 @@ class LoRAKDConfig:
     metadata_jsonl: str
     dev_metadata_jsonl: str
     output_dir: str
+    experiment_family: str = "G3"
     min_status: str = "aug_judge_pass"
     dev_min_status: str = "aug_judge_pass"
     max_length: int = 1024
@@ -365,8 +366,9 @@ def train_lora_sft_kd(config: LoRAKDConfig) -> Path:
     (output_dir / "kd_training_config.json").write_text(
         json.dumps(config.__dict__, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    experiment_family = str(config.experiment_family or "G3").upper()
     checkpoint_manifest = {
-        "experiment_family": "G3",
+        "experiment_family": experiment_family,
         "checkpoint_type": "lora_sft_kd",
         "final_adapter": str(final_adapter),
         "model_name_or_path": config.model_name_or_path,
@@ -380,7 +382,8 @@ def train_lora_sft_kd(config: LoRAKDConfig) -> Path:
         "latest_checkpoint": str(resolve_latest_checkpoint(output_dir)) if resolve_latest_checkpoint(output_dir) else None,
         "final_adapter_backup": str(final_backup) if final_backup else None,
     }
-    (output_dir / "g3_checkpoint_manifest.json").write_text(
+    manifest_name = "g3_checkpoint_manifest.json" if experiment_family == "G3" else f"{experiment_family.lower()}_checkpoint_manifest.json"
+    (output_dir / manifest_name).write_text(
         json.dumps(checkpoint_manifest, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     progress.write_state(
@@ -399,6 +402,7 @@ def main() -> None:
     parser.add_argument("--metadata-jsonl", required=True)
     parser.add_argument("--dev-metadata-jsonl", required=True)
     parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--experiment-family", default="G3")
     parser.add_argument("--min-status", default="aug_judge_pass")
     parser.add_argument("--dev-min-status", default="aug_judge_pass")
     parser.add_argument("--max-length", type=int, default=1024)

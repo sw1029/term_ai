@@ -13,10 +13,13 @@ from term_ai.experiment.hf_loading import (
     repair_bitnet_autobitlinear_weights,
 )
 from term_ai.experiment.kd_sweep import KDAblationSweepConfig, run_kd_ablation_sweep
+from term_ai.experiment.g5_teacher_logits import G5TeacherLogitConfig, write_g5_teacher_logits
 from term_ai.experiment.lora_kd import LoRAKDConfig, _lora_kd_training_kwargs, metadata_to_kd_rows
 from term_ai.experiment.metrics import summarize_predictions
 from term_ai.experiment.lm_eval import _format_eval_prompt, run_hf_zero_shot
 from term_ai.experiment.mcq import MCQItem, PARSER_VERSION, parse_answer_letter, parse_answer_response
+from term_ai.experiment.model_download import ensure_model_cached
+from term_ai.experiment.model_matrix import get_model_spec
 from term_ai.experiment.prompt_variation_sweep import PromptVariationSweepConfig, run_prompt_variation_sweep
 from term_ai.experiment.quantization import compare_quantization, validate_g3_adapter_checkpoint
 from term_ai.experiment.reporting import write_final_report_inputs
@@ -696,6 +699,7 @@ def test_ops_summary_includes_batch_cold_start_and_local_cost():
                 "batch_size": 1,
                 "cold_start_ms": 250.0,
                 "local_cost_per_hour_usd": 1.8,
+                "strict_parse_error": True,
             }
         ]
     )
@@ -703,6 +707,84 @@ def test_ops_summary_includes_batch_cold_start_and_local_cost():
     assert metrics["batch_size_1_latency_p95"] == 100.0
     assert metrics["cold_start_ms"] == 250.0
     assert metrics["cost_per_1000_questions"] > 0
+    assert metrics["strict_parse_error_rate"] == 1.0
+
+
+def test_model_download_reports_cached_model_without_download(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    cache_root = tmp_path / "hub"
+    snapshot = cache_root / "models--Qwen--Qwen2.5-0.5B-Instruct" / "snapshots" / "abc"
+    snapshot.mkdir(parents=True)
+    (snapshot / "config.json").write_text("{}", encoding="utf-8")
+    (snapshot / "model.safetensors").write_text("", encoding="utf-8")
+    verified: list[str] = []
+
+    def fake_verify(model_id: str, cache_dir: Path, trust_remote_code: bool) -> None:
+        verified.append(model_id)
+
+    monkeypatch.setattr("term_ai.experiment.model_download._verify_local_load", fake_verify)
+
+    result = ensure_model_cached("Qwen/Qwen2.5-0.5B-Instruct", cache_dir=cache_root)
+
+    assert result.status == "cached"
+    assert result.verified is True
+    assert verified == ["Qwen/Qwen2.5-0.5B-Instruct"]
+
+
+def test_model_download_missing_does_not_download_without_flag(tmp_path: Path):
+    result = ensure_model_cached("Qwen/Qwen2.5-1.5B-Instruct", cache_dir=tmp_path / "hub")
+
+    assert result.status == "missing"
+    assert result.verified is False
+
+
+def test_g5_teacher_logits_rewrites_teacher_scores(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    metadata = tmp_path / "kd.jsonl"
+    metadata.write_text(
+        json.dumps(
+            {
+                "item_id": "i1",
+                "status": "raw_gt",
+                "split": "train",
+                "teacher_scores": [0.7, 0.1, 0.1, 0.1],
+                "payload": {
+                    "task_type": "Raw Meaning Selection",
+                    "word": "contract",
+                    "meaning_ko": "계약",
+                    "context": "Word: contract",
+                    "options": ["계약", "청구서", "감사", "예산"],
+                    "answer_idx": 0,
+                    "teacher_scores": [0.7, 0.1, 0.1, 0.1],
+                },
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("term_ai.experiment.g5_teacher_logits._load_teacher_model", lambda config: (object(), object()))
+    monkeypatch.setattr("term_ai.experiment.g5_teacher_logits._option_token_ids", lambda tokenizer: [11, 12, 13, 14])
+    monkeypatch.setattr(
+        "term_ai.experiment.g5_teacher_logits._score_item",
+        lambda model, tokenizer, item, config, option_token_ids: ([0.4, 0.3, 0.2, 0.1], [4.0, 3.0, 2.0, 1.0]),
+    )
+
+    output = tmp_path / "g5.jsonl"
+    manifest = write_g5_teacher_logits(
+        G5TeacherLogitConfig(
+            metadata_jsonl=str(metadata),
+            output=str(output),
+            model_name_or_path="Qwen/Qwen2.5-3B-Instruct",
+            adapter_path="runs/G3_Qwen_dev/final_adapter",
+            temperature=2.0,
+        )
+    )
+    row = json.loads(output.read_text(encoding="utf-8").strip())
+
+    assert manifest["counts"]["written"] == 1
+    assert row["teacher_scores"] == [0.4, 0.3, 0.2, 0.1]
+    assert row["previous_teacher_scores"] == [0.7, 0.1, 0.1, 0.1]
+    assert row["payload"]["teacher_score_source"] == "g3_qwen_answer_logits"
+    assert row["teacher_score_logits"] == [4.0, 3.0, 2.0, 1.0]
 
 
 def test_final_report_collects_explanation_judge_summary(tmp_path: Path):
@@ -759,6 +841,29 @@ def test_master_workflow_default_jobs_cover_g0_g4_and_h1():
     assert "execution.model_name_or_path=microsoft/bitnet-b1.58-2B-4T" in bitnet_commands
     assert "execution.trust_remote_code=true" not in bitnet_commands
     assert any("execution.adapter_path=" in part for job in jobs for part in job["command"])
+
+
+def test_g5_model_specs_and_opt_in_workflow_jobs_are_registered():
+    assert get_model_spec("G5-Qwen0p5-3BKD-T2").uses_kd is True
+    jobs = _default_phase_jobs(
+        {
+            "runs_dir": "runs",
+            "auto_phase_jobs": {
+                "enabled": True,
+                "include_g5": True,
+                "include_baselines": False,
+                "include_zero_shot": False,
+                "include_lora_sft": False,
+                "include_lora_kd": False,
+                "include_quantization": False,
+                "include_hybrid": False,
+            },
+        }
+    )
+    names = {job["name"] for job in jobs}
+    assert "G5-teacher-train-T2" in names
+    assert "G5-Qwen0p5-ZS" in names
+    assert "G5-Qwen1p5-3BKD-T4" in names
 
 
 def test_augmentation_split_totals_enable_dev_test_generation():

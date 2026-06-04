@@ -19,6 +19,11 @@ G1_G2_EXPERIMENTS = {
     "G2-BitNet",
 }
 G3_EXPERIMENTS = {"G3-Gemma", "G3-Qwen", "G3-BitNet"}
+G5_STUDENT_MODELS = {
+    "Qwen0p5": "Qwen/Qwen2.5-0.5B-Instruct",
+    "Qwen1p5": "Qwen/Qwen2.5-1.5B-Instruct",
+}
+G5_VARIANTS = {"ZS", "G1", "G2", "GPTKD", "3BKD-T1", "3BKD-T2", "3BKD-T4"}
 
 
 def _value(value: object) -> object | None:
@@ -34,11 +39,48 @@ def _registry(cfg: DictConfig) -> dict[str, str]:
     }
 
 
+def _g5_parts(experiment_id: str) -> tuple[str, str] | None:
+    parts = experiment_id.split("-", 2)
+    if len(parts) != 3 or parts[0] != "G5":
+        return None
+    student, variant = parts[1], parts[2]
+    if student not in G5_STUDENT_MODELS or variant not in G5_VARIANTS:
+        return None
+    return student, variant
+
+
+def _is_g5_experiment(experiment_id: str) -> bool:
+    return _g5_parts(experiment_id) is not None
+
+
+def _is_g5_kd_experiment(experiment_id: str) -> bool:
+    parts = _g5_parts(experiment_id)
+    return parts is not None and (parts[1] == "GPTKD" or parts[1].startswith("3BKD-"))
+
+
+def _g5_default_kd_metadata(cfg: DictConfig, experiment_id: str, *, dev: bool) -> str:
+    parts = _g5_parts(experiment_id)
+    if parts is None:
+        raise ValueError(f"not a G5 experiment id: {experiment_id}")
+    variant = parts[1]
+    if variant == "GPTKD":
+        return str(cfg.execution.kd_dev_metadata if dev else cfg.execution.kd_metadata)
+    temperature = variant.rsplit("T", 1)[1]
+    key = f"g5_qwen3b_teacher_kd_{'dev' if dev else 'train'}_t{temperature}_jsonl"
+    if key not in cfg.data:
+        raise ValueError(f"missing data.{key} for {experiment_id}")
+    return str(cfg.data[key])
+
+
 def _model_name_or_path(cfg: DictConfig, experiment_id: str) -> str | None:
     configured = _value(cfg.execution.model_name_or_path)
     if configured:
         return str(configured)
     registry = _registry(cfg)
+    g5_parts = _g5_parts(experiment_id)
+    if g5_parts is not None:
+        student, _ = g5_parts
+        return registry.get(f"G5-{student}") or G5_STUDENT_MODELS[student]
     return registry.get(experiment_id)
 
 
@@ -51,6 +93,10 @@ def _default_metadata(cfg: DictConfig, experiment_id: str) -> str:
         or experiment_id.startswith("G1")
         or experiment_id.startswith("G2")
     ):
+        return str(cfg.execution.raw_metadata)
+    if _is_g5_experiment(experiment_id):
+        if _is_g5_kd_experiment(experiment_id):
+            return _g5_default_kd_metadata(cfg, experiment_id, dev=False)
         return str(cfg.execution.raw_metadata)
     if experiment_id in {"E1"} | G3_EXPERIMENTS:
         return str(cfg.execution.kd_metadata)
@@ -70,6 +116,8 @@ def _default_min_status(cfg: DictConfig, experiment_id: str) -> str:
         or experiment_id.startswith("G4")
     ):
         return RAW_GT_STATUS
+    if _is_g5_experiment(experiment_id):
+        return "any" if _is_g5_kd_experiment(experiment_id) else RAW_GT_STATUS
     return DEFAULT_TRAINABLE_AUG_STATUS
 
 
@@ -248,6 +296,92 @@ def main(cfg: DictConfig) -> None:
                 )
             )
             result = {"final_adapter": str(adapter)}
+        elif _is_g5_experiment(experiment_id):
+            g5_parts = _g5_parts(experiment_id)
+            if g5_parts is None:
+                raise ValueError(f"unsupported G5 experiment id: {experiment_id}")
+            _, g5_variant = g5_parts
+            model_name_or_path = _model_name_or_path(cfg, experiment_id)
+            if not model_name_or_path:
+                raise ValueError("execution.model_name_or_path is required for G5")
+            if g5_variant == "ZS":
+                from term_ai.experiment.lm_eval import run_hf_zero_shot
+
+                result = run_hf_zero_shot(
+                    metadata,
+                    output_dir,
+                    model_name_or_path=model_name_or_path,
+                    eval_split=eval_split,
+                    min_status=min_status,
+                    limit=cfg.execution.limit,
+                    final_test_once=final_test_once,
+                    experiment_id=experiment_id,
+                    test_lock_dir=test_lock_dir,
+                    local_cost_per_hour_usd=float(cfg.execution.local_cost_per_hour_usd),
+                    prompt_mode=str(cfg.execution.prompt_mode),
+                    trust_remote_code=bool(cfg.execution.trust_remote_code),
+                    resume=execution_resume,
+                    progress_interval_items=progress_interval_items,
+                )
+            elif g5_variant in {"G1", "G2"}:
+                from term_ai.experiment.training import LoRATrainingConfig, train_lora_sft
+
+                train_jsonl = _value(cfg.execution.train_sft_jsonl) or (
+                    cfg.data.raw_train_sft_jsonl if g5_variant == "G1" else cfg.data.raw_judge_aug_train_sft_jsonl
+                )
+                dev_jsonl = _value(cfg.execution.dev_sft_jsonl) or (
+                    cfg.data.raw_dev_sft_jsonl if g5_variant == "G1" else cfg.data.raw_judge_aug_dev_sft_jsonl
+                )
+                adapter = train_lora_sft(
+                    LoRATrainingConfig(
+                        model_name_or_path=model_name_or_path,
+                        train_jsonl=str(train_jsonl),
+                        dev_jsonl=str(dev_jsonl),
+                        output_dir=str(output_dir),
+                        lora_r=int(cfg.training.lora.r),
+                        lora_alpha=int(cfg.training.lora.alpha),
+                        lora_dropout=float(cfg.training.lora.dropout),
+                        resume=bool(cfg.training.resume),
+                        backup_weights=bool(cfg.training.weight_backup),
+                        backup_checkpoints=bool(cfg.training.backup_checkpoints),
+                        save_steps=_value(cfg.training.save_steps),
+                        save_total_limit=int(cfg.training.save_total_limit),
+                        eval_metadata=metadata,
+                        eval_split=eval_split,
+                        trust_remote_code=bool(cfg.execution.trust_remote_code),
+                        progress_interval_items=progress_interval_items,
+                    )
+                )
+                result = {"final_adapter": str(adapter)}
+            else:
+                from term_ai.experiment.lora_kd import LoRAKDConfig, train_lora_sft_kd
+
+                adapter = train_lora_sft_kd(
+                    LoRAKDConfig(
+                        model_name_or_path=model_name_or_path,
+                        metadata_jsonl=metadata,
+                        dev_metadata_jsonl=_g5_default_kd_metadata(cfg, experiment_id, dev=True),
+                        output_dir=str(output_dir),
+                        experiment_family="G5",
+                        min_status=min_status,
+                        dev_min_status=min_status,
+                        lora_r=int(cfg.training.lora.r),
+                        lora_alpha=int(cfg.training.lora.alpha),
+                        lora_dropout=float(cfg.training.lora.dropout),
+                        lambda_soft=float(cfg.training.kd.lambda_soft),
+                        include_rationale=bool(cfg.training.kd.include_rationale),
+                        require_teacher_scores=bool(cfg.training.kd.require_teacher_scores),
+                        response_format=str(cfg.training.kd.response_format),
+                        resume=bool(cfg.training.resume),
+                        backup_weights=bool(cfg.training.weight_backup),
+                        backup_checkpoints=bool(cfg.training.backup_checkpoints),
+                        save_steps=_value(cfg.training.save_steps),
+                        save_total_limit=int(cfg.training.save_total_limit),
+                        trust_remote_code=bool(cfg.execution.trust_remote_code),
+                        progress_interval_items=progress_interval_items,
+                    )
+                )
+                result = {"final_adapter": str(adapter)}
         elif experiment_id.startswith("G4"):
             from term_ai.experiment.quantization import compare_quantization
 

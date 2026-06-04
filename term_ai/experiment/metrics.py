@@ -204,6 +204,7 @@ def summarize_predictions(predictions: list[dict]) -> dict:
     ]
     cold_start_ms = [float(row["cold_start_ms"]) for row in predictions if "cold_start_ms" in row]
     parse_errors = sum(1 for row in predictions if row.get("parse_error"))
+    strict_parse_errors = sum(1 for row in predictions if row.get("strict_parse_error"))
 
     ci_low, ci_high = bootstrap_accuracy_ci(y_true, y_pred, samples=500) if predictions else (0.0, 0.0)
     task_counts = Counter(str(row.get("task_type", "unknown")) for row in predictions)
@@ -228,6 +229,7 @@ def summarize_predictions(predictions: list[dict]) -> dict:
         "task_counts": dict(task_counts),
         "task_accuracy": task_accuracy,
         "parse_error_rate": parse_errors / len(predictions) if predictions else 0.0,
+        "strict_parse_error_rate": strict_parse_errors / len(predictions) if predictions else 0.0,
         "tokens_per_sec": mean(token_speeds) if token_speeds else 0.0,
         "cost_per_1000_questions": 0.0,
         "peak_VRAM_or_RAM": 0.0,

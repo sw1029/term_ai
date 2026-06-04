@@ -1,0 +1,21 @@
+{
+  "status": "completed",
+  "stage": "trained",
+  "completed_count": 0,
+  "total_count": 2172,
+  "latest_checkpoint": "runs/G5_Qwen0p5_GPTKD_dev/checkpoints/checkpoint-2172",
+  "final_artifact": "runs/G5_Qwen0p5_GPTKD_dev/final_adapter",
+  "partial_metrics": {
+    "train_runtime": 862.2443,
+    "train_samples_per_second": 20.135,
+    "train_steps_per_second": 2.519,
+    "total_flos": 6001116894710784.0,
+    "train_loss": 1.0099146431706447,
+    "epoch": 3.0
+  },
+  "reason": null,
+  "details": {
+    "final_adapter_backup": "runs/G5_Qwen0p5_GPTKD_dev/backups/final_adapter_20260604T131012153480Z"
+  },
+  "updated_at": "2026-06-04T13:10:12.160647+00:00"
+}

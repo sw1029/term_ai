@@ -1,0 +1,15 @@
+{
+  "experiment_family": "G5",
+  "checkpoint_type": "lora_sft_kd",
+  "final_adapter": "runs/G5_Qwen1p5_GPTKD_dev/final_adapter",
+  "model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct",
+  "metadata_jsonl": "data/metadata/kd_train_view_v1.jsonl",
+  "dev_metadata_jsonl": "data/metadata/kd_dev_view_v1.jsonl",
+  "lambda_soft": 0.5,
+  "hard_label_only": false,
+  "include_rationale": false,
+  "response_format": "json_distribution",
+  "trust_remote_code": false,
+  "latest_checkpoint": "runs/G5_Qwen1p5_GPTKD_dev/checkpoints/checkpoint-2172",
+  "final_adapter_backup": "runs/G5_Qwen1p5_GPTKD_dev/backups/final_adapter_20260604T163212985839Z"
+}

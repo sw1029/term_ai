@@ -1,0 +1,21 @@
+{
+  "status": "completed",
+  "stage": "trained",
+  "completed_count": 0,
+  "total_count": 2172,
+  "latest_checkpoint": "runs/G5_Qwen0p5_3BKD_T2_dev/checkpoints/checkpoint-2172",
+  "final_artifact": "runs/G5_Qwen0p5_3BKD_T2_dev/final_adapter",
+  "partial_metrics": {
+    "train_runtime": 961.6045,
+    "train_samples_per_second": 18.054,
+    "train_steps_per_second": 2.259,
+    "total_flos": 8716553060700672.0,
+    "train_loss": 8.985117202305663,
+    "epoch": 3.0
+  },
+  "reason": null,
+  "details": {
+    "final_adapter_backup": "runs/G5_Qwen0p5_3BKD_T2_dev/backups/final_adapter_20260604T140944759973Z"
+  },
+  "updated_at": "2026-06-04T14:09:44.766707+00:00"
+}

@@ -461,6 +461,71 @@ python -m term_ai.experiment.hydra_app \
 - `runs/G4_Gemma_dev/quantization_compare.json`
 - `runs/G4_BitNet_dev/quantization_compare.json`
 
+## 8.5. Dev split: G5 3B teacher -> 0.5B/1.5B student compression
+
+G5는 기존 `runs/G3_Qwen_dev/final_adapter`를 3B teacher로 사용해
+`Qwen/Qwen2.5-0.5B-Instruct`, `Qwen/Qwen2.5-1.5B-Instruct` student를
+압축 학습합니다. test split teacher score는 만들지 않고, dev에서 선택한 adapter만
+마지막 final test에서 lock 평가합니다.
+
+권장 Python:
+
+```bash
+PYTHON_BIN=/home/swfool/anaconda3/envs/term_toeic/bin/python
+```
+
+모델 cache-first 확인 및 미캐시 모델 다운로드:
+
+```bash
+${PYTHON_BIN} -m term_ai.experiment.model_download \
+  --model-id Qwen/Qwen2.5-3B-Instruct \
+  --model-id Qwen/Qwen2.5-0.5B-Instruct \
+  --model-id Qwen/Qwen2.5-1.5B-Instruct \
+  --download-if-missing \
+  --output runs/G5_model_download.json
+```
+
+G3 Qwen teacher logits 기반 KD metadata 생성 예시:
+
+```bash
+${PYTHON_BIN} -m term_ai.experiment.g5_teacher_logits \
+  --metadata-jsonl data/metadata/kd_train_view_v1.jsonl \
+  --output data/metadata/g5_qwen3b_teacher_kd_train_t2_v1.jsonl \
+  --model-name-or-path Qwen/Qwen2.5-3B-Instruct \
+  --adapter-path runs/G3_Qwen_dev/final_adapter \
+  --min-status any \
+  --temperature 2
+
+${PYTHON_BIN} -m term_ai.experiment.g5_teacher_logits \
+  --metadata-jsonl data/metadata/kd_dev_view_v1.jsonl \
+  --output data/metadata/g5_qwen3b_teacher_kd_dev_t2_v1.jsonl \
+  --model-name-or-path Qwen/Qwen2.5-3B-Instruct \
+  --adapter-path runs/G3_Qwen_dev/final_adapter \
+  --min-status any \
+  --temperature 2
+```
+
+Full sweep 전용 스크립트:
+
+```bash
+PYTHON_BIN=/home/swfool/anaconda3/envs/term_toeic/bin/python \
+  scripts/run_g5_experiments.sh all
+```
+
+개별 모드:
+
+```bash
+scripts/run_g5_experiments.sh download
+scripts/run_g5_experiments.sh teacher
+scripts/run_g5_experiments.sh dev
+scripts/run_g5_experiments.sh final
+scripts/run_g5_experiments.sh stats
+```
+
+G5 full sweep는 student별로 `ZS`, `G1`, `G2`, `GPTKD`,
+`3BKD-T1`, `3BKD-T2`, `3BKD-T4`를 실행합니다. `G5_DROP_RATIONALE=1`이
+기본값이라 KD 학습 target은 답변 JSON과 분포에 집중합니다.
+
 ## 9. Dev split: E1 embedding scorer KD
 
 E1도 KD view의 raw + generated teacher scores를 같이 쓰려면 `execution.min_status=any`를 명시합니다.

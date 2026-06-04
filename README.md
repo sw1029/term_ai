@@ -233,6 +233,7 @@ checkpoint 정보를 저장합니다. `SIGKILL`, 전원 종료, OS crash처럼 P
 - `G2-Gemma`, `G2-Qwen`, `G2-BitNet`: raw + judge-validated augmentation LoRA SFT
 - `G3-Gemma`, `G3-Qwen`, `G3-BitNet`: raw + aug + teacher score LoRA KD
 - `G4-8bit`: same G3 checkpoint quantization comparison wrapper
+- `G5-Qwen0p5-*`, `G5-Qwen1p5-*`: G3 Qwen 3B teacher logits -> 0.5B/1.5B student compression
 - `E1`: embedding scorer KD
 - `H1`: hybrid scorer + fallback policy
 
@@ -267,6 +268,67 @@ G4는 G3 KD adapter manifest를 기본적으로 검증합니다.
   execution.model_name_or_path=google/gemma-2-2b-it `
   execution.adapter_path=runs/G3_Gemma_dev/final_adapter `
   evaluation.split=dev
+```
+
+## G5 3B teacher -> 0.5B/1.5B student compression
+
+G5는 기존 `runs/G3_Qwen_dev/final_adapter`를 teacher로 사용해
+`Qwen/Qwen2.5-0.5B-Instruct`, `Qwen/Qwen2.5-1.5B-Instruct` student를
+비교합니다. test split teacher score는 만들지 않고, dev에서 선택한 adapter만
+final test에서 lock 평가합니다.
+
+권장 실행 환경:
+
+```bash
+PYTHON_BIN=/home/swfool/anaconda3/envs/term_toeic/bin/python
+```
+
+모델 cache-first 확인 및 미캐시 모델 다운로드:
+
+```bash
+${PYTHON_BIN} -m term_ai.experiment.model_download \
+  --model-id Qwen/Qwen2.5-3B-Instruct \
+  --model-id Qwen/Qwen2.5-0.5B-Instruct \
+  --model-id Qwen/Qwen2.5-1.5B-Instruct \
+  --download-if-missing \
+  --output runs/G5_model_download.json
+```
+
+G3 Qwen teacher logits로 train/dev KD metadata를 만듭니다.
+
+```bash
+${PYTHON_BIN} -m term_ai.experiment.g5_teacher_logits \
+  --metadata-jsonl data/metadata/kd_train_view_v1.jsonl \
+  --output data/metadata/g5_qwen3b_teacher_kd_train_t2_v1.jsonl \
+  --model-name-or-path Qwen/Qwen2.5-3B-Instruct \
+  --adapter-path runs/G3_Qwen_dev/final_adapter \
+  --min-status any \
+  --temperature 2
+
+${PYTHON_BIN} -m term_ai.experiment.g5_teacher_logits \
+  --metadata-jsonl data/metadata/kd_dev_view_v1.jsonl \
+  --output data/metadata/g5_qwen3b_teacher_kd_dev_t2_v1.jsonl \
+  --model-name-or-path Qwen/Qwen2.5-3B-Instruct \
+  --adapter-path runs/G3_Qwen_dev/final_adapter \
+  --min-status any \
+  --temperature 2
+```
+
+전체 G5 sweep은 전용 스크립트를 사용합니다.
+
+```bash
+PYTHON_BIN=/home/swfool/anaconda3/envs/term_toeic/bin/python \
+  scripts/run_g5_experiments.sh all
+```
+
+개별 모드:
+
+```bash
+scripts/run_g5_experiments.sh download
+scripts/run_g5_experiments.sh teacher
+scripts/run_g5_experiments.sh dev
+scripts/run_g5_experiments.sh final
+scripts/run_g5_experiments.sh stats
 ```
 
 ## Master workflow

@@ -1,0 +1,72 @@
+{
+  "status": "completed",
+  "stage": "completed",
+  "completed_count": 1170,
+  "total_count": 1170,
+  "latest_checkpoint": null,
+  "final_artifact": null,
+  "partial_metrics": {
+    "n": 1170,
+    "accuracy": 0.9991452991452991,
+    "macro_f1": 0.9991985512272185,
+    "classwise_f1": {
+      "A": 0.9984202211690364,
+      "B": 1.0,
+      "C": 1.0,
+      "D": 0.9983739837398374
+    },
+    "ece": 0.03783760683759669,
+    "brier_score": 0.003002136752136754,
+    "bootstrap_accuracy_95ci": [
+      0.9974358974358974,
+      1.0
+    ],
+    "task_counts": {
+      "Raw Meaning Selection": 1170
+    },
+    "task_accuracy": {
+      "Raw Meaning Selection": 0.9991452991452991
+    },
+    "parse_error_rate": 0.0,
+    "strict_parse_error_rate": 0.039316239316239315,
+    "tokens_per_sec": 42.76177461230113,
+    "cost_per_1000_questions": 0.0,
+    "peak_VRAM_or_RAM": 3001.369140625,
+    "peak_ram_mb": 2351.26171875,
+    "cold_start_ms": 3628.4063149942085,
+    "ops_metric_coverage": {
+      "latency_ms": 1170,
+      "batch_size_1_latency_ms": 1170,
+      "tokens_per_sec": 1170,
+      "peak_vram_mb": 1170,
+      "ram_mb": 1170,
+      "estimated_cost_usd": 0,
+      "local_cost_per_hour_usd": 1170,
+      "cold_start_ms": 1170
+    },
+    "total_estimated_cost_usd": 0.0,
+    "latency_p50": 380.32359699718654,
+    "latency_p95": 1278.5631039878353,
+    "batch_size_1_latency_p95": 1278.5631039878353,
+    "adapter_path": "runs/G5_Qwen1p5_GPTKD_dev/final_adapter",
+    "quantization": "fp16",
+    "model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct",
+    "local_cost_per_hour_usd": 0.0,
+    "parser_version": "mcq_answer_parser_v2",
+    "prompt_contract_version": "mcq_answer_json_v2",
+    "prompt_mode": "chat",
+    "trust_remote_code": false,
+    "prompt_mode_effective": "chat"
+  },
+  "reason": null,
+  "details": {
+    "model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct",
+    "adapter_path": "runs/G5_Qwen1p5_GPTKD_dev/final_adapter",
+    "quantization": "fp16",
+    "parser_version": "mcq_answer_parser_v2",
+    "prompt_contract_version": "mcq_answer_json_v2",
+    "prompt_mode": "chat",
+    "prompt_mode_effective": "chat"
+  },
+  "updated_at": "2026-06-04T16:48:52.868177+00:00"
+}

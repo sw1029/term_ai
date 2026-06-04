@@ -12,6 +12,12 @@ data:
   human_approved_metadata: data/metadata/aug_human_pass_v1.jsonl
   kd_metadata: data/metadata/kd_train_view_v1.jsonl
   kd_dev_metadata: data/metadata/kd_dev_view_v1.jsonl
+  g5_qwen3b_teacher_kd_train_t1_jsonl: data/metadata/g5_qwen3b_teacher_kd_train_t1_v1.jsonl
+  g5_qwen3b_teacher_kd_dev_t1_jsonl: data/metadata/g5_qwen3b_teacher_kd_dev_t1_v1.jsonl
+  g5_qwen3b_teacher_kd_train_t2_jsonl: data/metadata/g5_qwen3b_teacher_kd_train_t2_v1.jsonl
+  g5_qwen3b_teacher_kd_dev_t2_jsonl: data/metadata/g5_qwen3b_teacher_kd_dev_t2_v1.jsonl
+  g5_qwen3b_teacher_kd_train_t4_jsonl: data/metadata/g5_qwen3b_teacher_kd_train_t4_v1.jsonl
+  g5_qwen3b_teacher_kd_dev_t4_jsonl: data/metadata/g5_qwen3b_teacher_kd_dev_t4_v1.jsonl
   raw_metadata: data/metadata/raw_mcq_v1.jsonl
   validation_metadata: data/metadata/validation_v1.jsonl
   data_version: raw_v1
@@ -39,6 +45,8 @@ model:
     G3-Gemma: google/gemma-2-2b-it
     G3-Qwen: Qwen/Qwen2.5-3B-Instruct
     G3-BitNet: microsoft/bitnet-b1.58-2B-4T
+    G5-Qwen0p5: Qwen/Qwen2.5-0.5B-Instruct
+    G5-Qwen1p5: Qwen/Qwen2.5-1.5B-Instruct
   experiment_id: B0
 
 execution:
@@ -143,6 +151,7 @@ evaluation:
     - cost_per_1000_questions
     - fallback_rate
     - parse_error_rate
+    - strict_parse_error_rate
 
 logging:
   runs_dir: runs
@@ -202,7 +211,17 @@ workflow:
       include_lora_kd: true
       include_quantization: true
       include_hybrid: true
+      include_g5: false
       g4_source_experiment: G3-Gemma
+      g5_teacher_model: Qwen/Qwen2.5-3B-Instruct
+      g5_teacher_adapter: runs/G3_Qwen_dev/final_adapter
+      g5_students:
+        qwen0p5: Qwen/Qwen2.5-0.5B-Instruct
+        qwen1p5: Qwen/Qwen2.5-1.5B-Instruct
+      g5_temperatures:
+        - 1
+        - 2
+        - 4
       prompt_variation:
         enabled: true
         train_jsonl: data/sft/raw_judge_aug_train_sft_v1.jsonl

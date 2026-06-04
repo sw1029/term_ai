@@ -1,0 +1,72 @@
+{
+  "status": "completed",
+  "stage": "completed",
+  "completed_count": 1170,
+  "total_count": 1170,
+  "latest_checkpoint": null,
+  "final_artifact": null,
+  "partial_metrics": {
+    "n": 1170,
+    "accuracy": 1.0,
+    "macro_f1": 1.0,
+    "classwise_f1": {
+      "A": 1.0,
+      "B": 1.0,
+      "C": 1.0,
+      "D": 1.0
+    },
+    "ece": 0.18717948717948718,
+    "brier_score": 0.18717948717948718,
+    "bootstrap_accuracy_95ci": [
+      1.0,
+      1.0
+    ],
+    "task_counts": {
+      "Raw Meaning Selection": 1170
+    },
+    "task_accuracy": {
+      "Raw Meaning Selection": 1.0
+    },
+    "parse_error_rate": 0.0,
+    "strict_parse_error_rate": 0.017948717948717947,
+    "tokens_per_sec": 88.617970032035,
+    "cost_per_1000_questions": 0.0,
+    "peak_VRAM_or_RAM": 1981.1474609375,
+    "peak_ram_mb": 2846.09765625,
+    "cold_start_ms": 3012.463648978155,
+    "ops_metric_coverage": {
+      "latency_ms": 1170,
+      "batch_size_1_latency_ms": 1170,
+      "tokens_per_sec": 1170,
+      "peak_vram_mb": 1170,
+      "ram_mb": 1170,
+      "estimated_cost_usd": 0,
+      "local_cost_per_hour_usd": 1170,
+      "cold_start_ms": 1170
+    },
+    "total_estimated_cost_usd": 0.0,
+    "latency_p50": 519.7037190082483,
+    "latency_p95": 644.1418370231986,
+    "batch_size_1_latency_p95": 644.1418370231986,
+    "adapter_path": "runs/G5_Qwen0p5_G2_dev/final_adapter",
+    "quantization": "fp16",
+    "model_name_or_path": "Qwen/Qwen2.5-0.5B-Instruct",
+    "local_cost_per_hour_usd": 0.0,
+    "parser_version": "mcq_answer_parser_v2",
+    "prompt_contract_version": "mcq_answer_json_v2",
+    "prompt_mode": "chat",
+    "trust_remote_code": false,
+    "prompt_mode_effective": "chat"
+  },
+  "reason": null,
+  "details": {
+    "model_name_or_path": "Qwen/Qwen2.5-0.5B-Instruct",
+    "adapter_path": "runs/G5_Qwen0p5_G2_dev/final_adapter",
+    "quantization": "fp16",
+    "parser_version": "mcq_answer_parser_v2",
+    "prompt_contract_version": "mcq_answer_json_v2",
+    "prompt_mode": "chat",
+    "prompt_mode_effective": "chat"
+  },
+  "updated_at": "2026-06-04T12:55:33.037677+00:00"
+}

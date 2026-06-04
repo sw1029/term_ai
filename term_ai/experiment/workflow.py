@@ -247,6 +247,86 @@ def _default_phase_jobs(config: dict[str, Any]) -> list[dict[str, Any]]:
             }
         )
 
+    if bool(auto_cfg.get("include_g5", False)):
+        teacher_model = str(auto_cfg.get("g5_teacher_model", qwen_model))
+        teacher_adapter = Path(auto_cfg.get("g5_teacher_adapter", "runs/G3_Qwen_dev/final_adapter"))
+        g5_students = auto_cfg.get("g5_students") or {
+            "qwen0p5": "Qwen/Qwen2.5-0.5B-Instruct",
+            "qwen1p5": "Qwen/Qwen2.5-1.5B-Instruct",
+        }
+        g5_temperatures = [int(value) for value in auto_cfg.get("g5_temperatures", [1, 2, 4])]
+        for temperature in g5_temperatures:
+            for split_name, metadata_path in (
+                ("train", "data/metadata/kd_train_view_v1.jsonl"),
+                ("dev", "data/metadata/kd_dev_view_v1.jsonl"),
+            ):
+                output_metadata = f"data/metadata/g5_qwen3b_teacher_kd_{split_name}_t{temperature}_v1.jsonl"
+                jobs.append(
+                    {
+                        "phase": 6,
+                        "name": f"G5-teacher-{split_name}-T{temperature}",
+                        "requires_paths": [metadata_path, str(teacher_adapter)],
+                        "command": [
+                            "{python}",
+                            "-m",
+                            "term_ai.experiment.g5_teacher_logits",
+                            "--metadata-jsonl",
+                            metadata_path,
+                            "--output",
+                            output_metadata,
+                            "--model-name-or-path",
+                            teacher_model,
+                            "--adapter-path",
+                            str(teacher_adapter),
+                            "--min-status",
+                            "any",
+                            "--temperature",
+                            str(temperature),
+                        ],
+                    }
+                )
+        for student_key, student_model in g5_students.items():
+            student_label = "Qwen0p5" if "0p5" in str(student_key).lower() else "Qwen1p5"
+            for variant, phase in (("ZS", 4), ("G1", 5), ("G2", 5), ("GPTKD", 6)):
+                extra = [f"execution.model_name_or_path={student_model}"]
+                if variant == "GPTKD":
+                    extra.extend(["execution.min_status=any", "training.kd.include_rationale=false"])
+                experiment_id = f"G5-{student_label}-{variant}"
+                jobs.append(
+                    {
+                        "phase": phase,
+                        "name": experiment_id,
+                        "command": _auto_job_command(
+                            experiment_id,
+                            output_base / experiment_id,
+                            eval_split,
+                            extra=extra,
+                        ),
+                    }
+                )
+            for temperature in g5_temperatures:
+                experiment_id = f"G5-{student_label}-3BKD-T{temperature}"
+                jobs.append(
+                    {
+                        "phase": 6,
+                        "name": experiment_id,
+                        "requires_paths": [
+                            f"data/metadata/g5_qwen3b_teacher_kd_train_t{temperature}_v1.jsonl",
+                            f"data/metadata/g5_qwen3b_teacher_kd_dev_t{temperature}_v1.jsonl",
+                        ],
+                        "command": _auto_job_command(
+                            experiment_id,
+                            output_base / experiment_id,
+                            eval_split,
+                            extra=[
+                                f"execution.model_name_or_path={student_model}",
+                                "execution.min_status=any",
+                                "training.kd.include_rationale=false",
+                            ],
+                        ),
+                    }
+                )
+
     if bool(auto_cfg.get("include_hybrid", True)):
         primary = output_base / "B0" / "prediction_log.jsonl"
         fallback = output_base / "B4" / "prediction_log.jsonl"
