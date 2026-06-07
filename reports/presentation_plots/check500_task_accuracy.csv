@@ -1,19 +1,19 @@
 model,label,task,accuracy
-B0,B0 embedding,Raw Meaning Selection,0.6108247422680413
-B0,B0 embedding,Synonym Selection,0.775
-B0,B0 embedding,Sense Disambiguation,0.8181818181818182
-B0,B0 embedding,Antonym Selection,0.2857142857142857
-B0,B0 embedding,Context Cloze,0.6944444444444444
+B0,B0 Embedding,Raw Meaning Selection,0.6108247422680413
+B0,B0 Embedding,Synonym Selection,0.775
+B0,B0 Embedding,Sense Disambiguation,0.8181818181818182
+B0,B0 Embedding,Antonym Selection,0.2857142857142857
+B0,B0 Embedding,Context Cloze,0.6944444444444444
 B2,B2 MLP scorer,Raw Meaning Selection,0.6030927835051546
 B2,B2 MLP scorer,Synonym Selection,0.5
 B2,B2 MLP scorer,Sense Disambiguation,0.6363636363636364
 B2,B2 MLP scorer,Antonym Selection,0.2857142857142857
 B2,B2 MLP scorer,Context Cloze,0.5277777777777778
-B3,B3 cross-encoder,Raw Meaning Selection,1.0
-B3,B3 cross-encoder,Synonym Selection,0.975
-B3,B3 cross-encoder,Sense Disambiguation,1.0
-B3,B3 cross-encoder,Antonym Selection,0.14285714285714285
-B3,B3 cross-encoder,Context Cloze,1.0
+B3,B3 Cross-encoder,Raw Meaning Selection,1.0
+B3,B3 Cross-encoder,Synonym Selection,0.975
+B3,B3 Cross-encoder,Sense Disambiguation,1.0
+B3,B3 Cross-encoder,Antonym Selection,0.14285714285714285
+B3,B3 Cross-encoder,Context Cloze,1.0
 H1_local_hybrid,H1 local hybrid,Raw Meaning Selection,1.0
 H1_local_hybrid,H1 local hybrid,Synonym Selection,0.975
 H1_local_hybrid,H1 local hybrid,Sense Disambiguation,1.0

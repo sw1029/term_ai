@@ -12,6 +12,7 @@ os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib-term-ai")
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from matplotlib import font_manager
 from matplotlib.patches import Patch
 import numpy as np
 import pandas as pd
@@ -29,9 +30,9 @@ CHECK_MODELS = [
 ]
 
 CHECK_LABELS = {
-    "B0": "B0\nembedding",
+    "B0": "B0\nEmbedding",
     "B2": "B2\nMLP scorer",
-    "B3": "B3\ncross-encoder",
+    "B3": "B3\nCross-encoder",
     "H1_local_hybrid": "H1\nlocal hybrid",
     "G5_Qwen0p5_G1": "G5 0.5B\nSFT",
     "G5_Qwen1p5_G1": "G5 1.5B\nSFT",
@@ -71,6 +72,14 @@ TASK_ORDER = [
     "Context Cloze",
 ]
 
+TASK_LABELS = {
+    "Raw Meaning Selection": "Raw\nMeaning",
+    "Synonym Selection": "Synonym",
+    "Sense Disambiguation": "Sense",
+    "Antonym Selection": "Antonym",
+    "Context Cloze": "Context\nCloze",
+}
+
 FINAL_RUNS = {
     "B0": ("runs/B0_test_final/metric_log.json", "Embedding"),
     "B1": ("runs/B1_test_final/metric_log.json", "Embedding + logistic"),
@@ -105,11 +114,14 @@ def pct(value: float | None) -> str:
 
 
 def setup_style() -> None:
+    font_path = Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc")
+    if font_path.exists():
+        font_manager.fontManager.addfont(str(font_path))
     mpl.rcParams.update(
         {
             "figure.dpi": 150,
             "savefig.dpi": 220,
-            "font.family": "DejaVu Sans",
+            "font.family": "Noto Sans CJK JP",
             "axes.titlesize": 18,
             "axes.labelsize": 12,
             "xtick.labelsize": 10,
@@ -207,7 +219,7 @@ def plot_accuracy_bars(df: pd.DataFrame, out_dir: Path) -> None:
     ax.axhline(95, color="#333333", lw=1, ls="--", alpha=0.35)
     ax.text(len(df) - 0.25, 95.5, "95% deployment-grade band", ha="right", va="bottom", color="#333333")
     for bar, acc, err in zip(bars, df["accuracy"], df["errors"], strict=True):
-        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.8, f"{acc*100:.1f}%\n{err} err", ha="center", va="bottom", fontsize=10)
+        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.8, f"{acc*100:.1f}%\nerr {err}", ha="center", va="bottom", fontsize=10)
     legend_groups = list(dict.fromkeys(df["group"]))
     ax.legend(handles=[Patch(facecolor=GROUP_COLORS[g], label=g) for g in legend_groups], loc="lower right", frameon=False)
     save_fig(fig, out_dir, "01_check500_methodology_accuracy")
@@ -273,7 +285,7 @@ def plot_task_heatmap(df: pd.DataFrame, out_dir: Path) -> None:
     im = ax.imshow(arr, cmap="RdYlGn", vmin=0, vmax=100, aspect="auto")
     ax.set_title("Check-500: Task Slice Accuracy Heatmap")
     ax.set_xticks(np.arange(len(TASK_ORDER)))
-    ax.set_xticklabels([t.replace(" ", "\n") for t in TASK_ORDER])
+    ax.set_xticklabels([TASK_LABELS[t] for t in TASK_ORDER])
     ax.set_yticks(np.arange(len(labels)))
     ax.set_yticklabels(labels)
     for i in range(arr.shape[0]):
@@ -304,7 +316,7 @@ def plot_antonym_slice(df: pd.DataFrame, out_dir: Path) -> None:
     x = np.arange(len(hard))
     bars = ax.bar(x, hard["antonym"] * 100, color=[GROUP_COLORS[g] for g in hard["group"]], width=0.68)
     ax.plot(x, hard["overall"] * 100, color="#222222", marker="o", lw=2.2, label="Overall accuracy")
-    ax.set_title("Check-500: Hard Slice Reveals the Real Model Gap")
+    ax.set_title("Check-500: Hard Slice Reveals Model Gap")
     ax.set_ylabel("Accuracy (%)")
     ax.set_ylim(0, 104)
     ax.set_xticks(x)
@@ -323,19 +335,19 @@ def plot_stage_ladder(df: pd.DataFrame, out_dir: Path) -> None:
     x = np.arange(len(sub))
     ax.plot(x, sub["accuracy"] * 100, color="#1B4F72", marker="o", lw=3, ms=9)
     ax.fill_between(x, sub["accuracy"] * 100, 55, color="#1B4F72", alpha=0.08)
-    ax.set_title("Check-500: Methodological Stage Ladder")
+    ax.set_title("Check-500: Methodology Stage Ladder")
     ax.set_ylabel("Accuracy (%)")
     ax.set_ylim(55, 101.5)
     ax.set_xticks(x)
     ax.set_xticklabels(
         [
-            "similarity\nthreshold",
+            "similarity\nbaseline",
             "embedding\nclassifier",
-            "pairwise\nreranking",
+            "pairwise\nreranker",
             "0.5B local\nstudent",
             "1.5B local\nstudent",
-            "3B 4-bit\nruntime",
-            "3B KD/SFT\nquality cap",
+            "3B 4bit\nruntime",
+            "3B KD/SFT\nquality ceiling",
         ]
     )
     for i, row in sub.iterrows():
@@ -349,7 +361,7 @@ def plot_stage_ladder(df: pd.DataFrame, out_dir: Path) -> None:
         color="#333333",
     )
     ax.annotate(
-        "best quality\nbut slowest",
+        "best quality\nslowest runtime",
         xy=(len(sub) - 1, sub.iloc[-1]["accuracy"] * 100),
         xytext=(len(sub) - 2.3, 98.7),
         arrowprops={"arrowstyle": "->", "lw": 1.2, "color": "#943629"},
@@ -371,7 +383,7 @@ def plot_pairwise_deltas(root: Path, out_dir: Path) -> None:
             continue
         rows.append(
             {
-                "comparison": name.replace("_", " "),
+                "comparison": name.replace("_vs_", " vs ").replace("_", " "),
                 "delta": -float(delta_a_minus_b) * 100,
                 "lo": -float(ci[1]) * 100,
                 "hi": -float(ci[0]) * 100,
@@ -388,8 +400,8 @@ def plot_pairwise_deltas(root: Path, out_dir: Path) -> None:
     ax.axvline(0, color="#333333", lw=1)
     ax.set_yticks(y)
     ax.set_yticklabels(df["comparison"])
-    ax.set_xlabel("Second model accuracy minus first model accuracy (percentage points)")
-    ax.set_title("Check-500: Paired Accuracy Deltas with Bootstrap 95% CI")
+    ax.set_xlabel("Second model accuracy - first model accuracy (percentage point)")
+    ax.set_title("Check-500: paired accuracy delta and bootstrap 95% CI")
     for i, row in df.iterrows():
         p_text = "p<0.001" if row["p"] is not None and row["p"] < 0.001 else (f"p={row['p']:.3f}" if row["p"] is not None else "")
         ax.text(row["hi"] + 0.7, i, f"{row['delta']:+.1f}pp  {p_text}", va="center", fontsize=9)
@@ -402,15 +414,15 @@ def plot_calibration_contract(df: pd.DataFrame, out_dir: Path) -> None:
     x = np.arange(len(sub))
     w = 0.36
     ax.bar(x - w / 2, sub["ece"] * 100, width=w, color="#5B8DB8", label="ECE")
-    ax.bar(x + w / 2, sub["strict_parse_error_rate"] * 100, width=w, color="#B85B5B", label="Strict parse error")
-    ax.set_title("Check-500: Calibration and Output Contract Are Separate Risks")
+    ax.bar(x + w / 2, sub["strict_parse_error_rate"] * 100, width=w, color="#B85B5B", label="strict parsing error")
+    ax.set_title("Check-500: Calibration and Output Contract")
     ax.set_ylabel("Rate (%)")
     ax.set_ylim(0, 95)
     ax.set_xticks(x)
     ax.set_xticklabels(sub["label"])
     ax.legend(loc="upper left", frameon=False)
     ax.annotate(
-        "G3 is accurate and calibrated,\nbut often non-strict JSON",
+        "G3 is accurate and well calibrated,\nbut often violates strict JSON contract",
         xy=(len(sub) - 1 + w / 2, sub.iloc[-1]["strict_parse_error_rate"] * 100),
         xytext=(4.6, 72),
         arrowprops={"arrowstyle": "->", "lw": 1.2, "color": "#8D3333"},
@@ -431,15 +443,15 @@ def plot_hybrid_routing(root: Path, df: pd.DataFrame, out_dir: Path) -> None:
     colors = ["#8A8F98", "#1B8A8F", "#3A9D5D"]
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13.33, 7.5), gridspec_kw={"width_ratios": [1.0, 1.4]})
     ax1.pie(values, labels=None, autopct="%1.1f%%", colors=colors, startangle=110, textprops={"fontsize": 10})
-    ax1.set_title("Hybrid Routing")
+    ax1.set_title("Hybrid routing")
     ax1.legend(
         [
             Patch(facecolor=color)
             for color in colors
         ],
         [
-            f"{label.replace('_', ' ')}: {value} items"
-            for label, value in zip(labels, values, strict=True)
+            f"{reason_label}: {value} items"
+            for reason_label, value in zip(["high confidence", "mid confidence: cross-encoder", "low confidence: fallback"], values, strict=True)
         ],
         loc="lower center",
         bbox_to_anchor=(0.5, -0.12),
@@ -451,14 +463,14 @@ def plot_hybrid_routing(root: Path, df: pd.DataFrame, out_dir: Path) -> None:
     sub = sub.set_index("model").loc[order].reset_index()
     x = np.arange(len(sub))
     ax2.bar(x, sub["accuracy"] * 100, color=[GROUP_COLORS[g] for g in sub["group"]])
-    ax2.set_title("Hybrid Result vs Components")
+    ax2.set_title("Hybrid result and components")
     ax2.set_ylabel("Accuracy (%)")
     ax2.set_ylim(55, 101)
     ax2.set_xticks(x)
     ax2.set_xticklabels(sub["label"])
     for i, row in sub.iterrows():
         ax2.text(i, row["accuracy"] * 100 + 0.8, f"{row['accuracy']*100:.1f}%", ha="center")
-    fig.suptitle("Check-500: Local Hybrid Mostly Routes to Cross-Encoder", fontsize=18, y=0.98)
+    fig.suptitle("Check-500: Local Hybrid mostly uses Cross-encoder route", fontsize=18, y=0.98)
     save_fig(fig, out_dir, "08_check500_hybrid_routing")
 
 
@@ -487,7 +499,7 @@ def plot_error_overlap(root: Path, out_dir: Path) -> None:
         for j in range(len(models)):
             ax.text(j, i, f"{int(arr[i, j])}", ha="center", va="center", color="#111111", fontsize=9)
     cbar = fig.colorbar(im, ax=ax, fraction=0.024, pad=0.02)
-    cbar.set_label("Both-wrong item count")
+    cbar.set_label("both-wrong item count")
     save_fig(fig, out_dir, "09_check500_error_overlap")
 
 
@@ -498,7 +510,7 @@ def plot_finaltest_methodology(final_df: pd.DataFrame, out_dir: Path) -> None:
     x = np.arange(len(sub))
     colors = [GROUP_COLORS.get(g, "#999999") for g in sub["group"]]
     ax.bar(x, sub["accuracy"] * 100, color=colors)
-    ax.set_title("Original Final Test: Methodology Result Landscape")
+    ax.set_title("Original final test: Methodology Accuracy Landscape")
     ax.set_ylabel("Accuracy (%)")
     ax.set_ylim(55, 102.6)
     ax.set_xticks(x)
@@ -524,7 +536,7 @@ def plot_finaltest_lm_stage(final_df: pd.DataFrame, out_dir: Path) -> None:
     ax2.plot(x, sub["ece"] * 100, color="#B85B5B", marker="o", lw=2.5, label="ECE")
     ax2.set_ylabel("ECE (%)")
     ax2.set_ylim(0, max(5, float(sub["ece"].max() * 115)))
-    ax1.set_title("Original Final Test: LM Stages Are About Reliability, Not Only Accuracy")
+    ax1.set_title("Original final test: LM stages show reliability more than accuracy")
     for i, row in sub.iterrows():
         ax1.text(i, row["accuracy"] * 100 + 0.02, f"{row['accuracy']*100:.2f}%", ha="center", fontsize=8)
     lines, labels = ax1.get_legend_handles_labels()
@@ -548,12 +560,12 @@ def plot_finaltest_compression(final_df: pd.DataFrame, out_dir: Path) -> None:
         ax.scatter(row["latency_p50"], row["accuracy"] * 100, s=size, color=GROUP_COLORS.get(row["group"], "#999999"), alpha=0.82, edgecolor="white", linewidth=1.5)
         ax.annotate(row["label"], (row["latency_p50"], row["accuracy"] * 100), textcoords="offset points", xytext=label_offsets.get(row["model"], (8, 6)), fontsize=10)
     ax.set_xscale("log")
-    ax.set_title("Original Final Test: Compression Boundary")
+    ax.set_title("Original final test: Compression Boundary")
     ax.set_xlabel("Median latency per item, log scale (ms)")
     ax.set_ylabel("Accuracy (%)")
     ax.set_ylim(99.65, 100.05)
     ax.text(270, 99.925, "student models:\nnear-3B quality,\nlower runtime", color="#2F7D4D", fontsize=12)
-    ax.text(1450, 99.735, "4-bit: lower latency than 3B fp16,\ncalibration must be rechecked", color="#5E4690", fontsize=12)
+    ax.text(1450, 99.735, "4bit: lower latency than 3B fp16,\ncalibration needs recheck", color="#5E4690", fontsize=12)
     save_fig(fig, out_dir, "12_finaltest_compression_boundary")
 
 
@@ -587,7 +599,7 @@ def plot_final_vs_check(check_df: pd.DataFrame, final_df: pd.DataFrame, out_dir:
     w = 0.38
     ax.bar(x - w / 2, sub["final"] * 100, width=w, color="#B8C2CC", label="Original final raw test")
     ax.bar(x + w / 2, sub["check"] * 100, width=w, color=[GROUP_COLORS[g] for g in sub["group"]], label="Check-500 mixed/hard set")
-    ax.set_title("Final Raw Test vs Check-500: Harder Slice Exposes Method Gaps")
+    ax.set_title("Final raw test vs Check-500: hard slice reveals methodology gap")
     ax.set_ylabel("Accuracy (%)")
     ax.set_ylim(55, 101.5)
     ax.set_xticks(x)
@@ -605,7 +617,7 @@ def plot_runtime_steps(df: pd.DataFrame, out_dir: Path) -> None:
     x = np.arange(len(sub))
     total_latency_sec = sub["latency_p50"] * sub["n"] / 1000
     ax1.bar(x, total_latency_sec, color=[GROUP_COLORS[g] for g in sub["group"]], alpha=0.88)
-    ax1.set_ylabel("Approx. 500-item median-latency runtime (sec)")
+    ax1.set_ylabel("Estimated runtime for 500 items from p50 latency (sec)")
     ax1.set_yscale("log")
     ax1.set_xticks(x)
     ax1.set_xticklabels(sub["label"])
