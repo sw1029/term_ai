@@ -1,0 +1,322 @@
+{
+  "threshold_grid": [
+    0.75,
+    0.8,
+    0.85,
+    0.9,
+    0.95,
+    0.99,
+    1.01
+  ],
+  "trials": [
+    {
+      "low_confidence_threshold": 0.75,
+      "high_confidence_threshold": 0.75,
+      "accuracy": 0.646,
+      "fallback_rate": 0.02,
+      "cross_encoder_rate": 0.0,
+      "cost_per_1000_questions": 0.0,
+      "parse_error_rate": 0.0
+    },
+    {
+      "low_confidence_threshold": 0.75,
+      "high_confidence_threshold": 0.8,
+      "accuracy": 0.864,
+      "fallback_rate": 0.02,
+      "cross_encoder_rate": 0.404,
+      "cost_per_1000_questions": 0.0,
+      "parse_error_rate": 0.0
+    },
+    {
+      "low_confidence_threshold": 0.75,
+      "high_confidence_threshold": 0.85,
+      "accuracy": 0.976,
+      "fallback_rate": 0.02,
+      "cross_encoder_rate": 0.944,
+      "cost_per_1000_questions": 0.0,
+      "parse_error_rate": 0.0
+    },
+    {
+      "low_confidence_threshold": 0.75,
+      "high_confidence_threshold": 0.9,
+      "accuracy": 0.976,
+      "fallback_rate": 0.02,
+      "cross_encoder_rate": 0.98,
+      "cost_per_1000_questions": 0.0,
+      "parse_error_rate": 0.0
+    },
+    {
+      "low_confidence_threshold": 0.75,
+      "high_confidence_threshold": 0.95,
+      "accuracy": 0.976,
+      "fallback_rate": 0.02,
+      "cross_encoder_rate": 0.98,
+      "cost_per_1000_questions": 0.0,
+      "parse_error_rate": 0.0
+    },
+    {
+      "low_confidence_threshold": 0.75,
+      "high_confidence_threshold": 0.99,
+      "accuracy": 0.976,
+      "fallback_rate": 0.02,
+      "cross_encoder_rate": 0.98,
+      "cost_per_1000_questions": 0.0,
+      "parse_error_rate": 0.0
+    },
+    {
+      "low_confidence_threshold": 0.75,
+      "high_confidence_threshold": 1.01,
+      "accuracy": 0.976,
+      "fallback_rate": 0.02,
+      "cross_encoder_rate": 0.98,
+      "cost_per_1000_questions": 0.0,
+      "parse_error_rate": 0.0
+    },
+    {
+      "low_confidence_threshold": 0.8,
+      "high_confidence_threshold": 0.8,
+      "accuracy": 0.856,
+      "fallback_rate": 0.424,
+      "cross_encoder_rate": 0.0,
+      "cost_per_1000_questions": 0.0,
+      "parse_error_rate": 0.0
+    },
+    {
+      "low_confidence_threshold": 0.8,
+      "high_confidence_threshold": 0.85,
+      "accuracy": 0.968,
+      "fallback_rate": 0.424,
+      "cross_encoder_rate": 0.54,
+      "cost_per_1000_questions": 0.0,
+      "parse_error_rate": 0.0
+    },
+    {
+      "low_confidence_threshold": 0.8,
+      "high_confidence_threshold": 0.9,
+      "accuracy": 0.968,
+      "fallback_rate": 0.424,
+      "cross_encoder_rate": 0.576,
+      "cost_per_1000_questions": 0.0,
+      "parse_error_rate": 0.0
+    },
+    {
+      "low_confidence_threshold": 0.8,
+      "high_confidence_threshold": 0.95,
+      "accuracy": 0.968,
+      "fallback_rate": 0.424,
+      "cross_encoder_rate": 0.576,
+      "cost_per_1000_questions": 0.0,
+      "parse_error_rate": 0.0
+    },
+    {
+      "low_confidence_threshold": 0.8,
+      "high_confidence_threshold": 0.99,
+      "accuracy": 0.968,
+      "fallback_rate": 0.424,
+      "cross_encoder_rate": 0.576,
+      "cost_per_1000_questions": 0.0,
+      "parse_error_rate": 0.0
+    },
+    {
+      "low_confidence_threshold": 0.8,
+      "high_confidence_threshold": 1.01,
+      "accuracy": 0.968,
+      "fallback_rate": 0.424,
+      "cross_encoder_rate": 0.576,
+      "cost_per_1000_questions": 0.0,
+      "parse_error_rate": 0.0
+    },
+    {
+      "low_confidence_threshold": 0.85,
+      "high_confidence_threshold": 0.85,
+      "accuracy": 0.966,
+      "fallback_rate": 0.964,
+      "cross_encoder_rate": 0.0,
+      "cost_per_1000_questions": 0.0,
+      "parse_error_rate": 0.0
+    },
+    {
+      "low_confidence_threshold": 0.85,
+      "high_confidence_threshold": 0.9,
+      "accuracy": 0.966,
+      "fallback_rate": 0.964,
+      "cross_encoder_rate": 0.036,
+      "cost_per_1000_questions": 0.0,
+      "parse_error_rate": 0.0
+    },
+    {
+      "low_confidence_threshold": 0.85,
+      "high_confidence_threshold": 0.95,
+      "accuracy": 0.966,
+      "fallback_rate": 0.964,
+      "cross_encoder_rate": 0.036,
+      "cost_per_1000_questions": 0.0,
+      "parse_error_rate": 0.0
+    },
+    {
+      "low_confidence_threshold": 0.85,
+      "high_confidence_threshold": 0.99,
+      "accuracy": 0.966,
+      "fallback_rate": 0.964,
+      "cross_encoder_rate": 0.036,
+      "cost_per_1000_questions": 0.0,
+      "parse_error_rate": 0.0
+    },
+    {
+      "low_confidence_threshold": 0.85,
+      "high_confidence_threshold": 1.01,
+      "accuracy": 0.966,
+      "fallback_rate": 0.964,
+      "cross_encoder_rate": 0.036,
+      "cost_per_1000_questions": 0.0,
+      "parse_error_rate": 0.0
+    },
+    {
+      "low_confidence_threshold": 0.9,
+      "high_confidence_threshold": 0.9,
+      "accuracy": 0.966,
+      "fallback_rate": 1.0,
+      "cross_encoder_rate": 0.0,
+      "cost_per_1000_questions": 0.0,
+      "parse_error_rate": 0.0
+    },
+    {
+      "low_confidence_threshold": 0.9,
+      "high_confidence_threshold": 0.95,
+      "accuracy": 0.966,
+      "fallback_rate": 1.0,
+      "cross_encoder_rate": 0.0,
+      "cost_per_1000_questions": 0.0,
+      "parse_error_rate": 0.0
+    },
+    {
+      "low_confidence_threshold": 0.9,
+      "high_confidence_threshold": 0.99,
+      "accuracy": 0.966,
+      "fallback_rate": 1.0,
+      "cross_encoder_rate": 0.0,
+      "cost_per_1000_questions": 0.0,
+      "parse_error_rate": 0.0
+    },
+    {
+      "low_confidence_threshold": 0.9,
+      "high_confidence_threshold": 1.01,
+      "accuracy": 0.966,
+      "fallback_rate": 1.0,
+      "cross_encoder_rate": 0.0,
+      "cost_per_1000_questions": 0.0,
+      "parse_error_rate": 0.0
+    },
+    {
+      "low_confidence_threshold": 0.95,
+      "high_confidence_threshold": 0.95,
+      "accuracy": 0.966,
+      "fallback_rate": 1.0,
+      "cross_encoder_rate": 0.0,
+      "cost_per_1000_questions": 0.0,
+      "parse_error_rate": 0.0
+    },
+    {
+      "low_confidence_threshold": 0.95,
+      "high_confidence_threshold": 0.99,
+      "accuracy": 0.966,
+      "fallback_rate": 1.0,
+      "cross_encoder_rate": 0.0,
+      "cost_per_1000_questions": 0.0,
+      "parse_error_rate": 0.0
+    },
+    {
+      "low_confidence_threshold": 0.95,
+      "high_confidence_threshold": 1.01,
+      "accuracy": 0.966,
+      "fallback_rate": 1.0,
+      "cross_encoder_rate": 0.0,
+      "cost_per_1000_questions": 0.0,
+      "parse_error_rate": 0.0
+    },
+    {
+      "low_confidence_threshold": 0.99,
+      "high_confidence_threshold": 0.99,
+      "accuracy": 0.966,
+      "fallback_rate": 1.0,
+      "cross_encoder_rate": 0.0,
+      "cost_per_1000_questions": 0.0,
+      "parse_error_rate": 0.0
+    },
+    {
+      "low_confidence_threshold": 0.99,
+      "high_confidence_threshold": 1.01,
+      "accuracy": 0.966,
+      "fallback_rate": 1.0,
+      "cross_encoder_rate": 0.0,
+      "cost_per_1000_questions": 0.0,
+      "parse_error_rate": 0.0
+    },
+    {
+      "low_confidence_threshold": 1.01,
+      "high_confidence_threshold": 1.01,
+      "accuracy": 0.966,
+      "fallback_rate": 1.0,
+      "cross_encoder_rate": 0.0,
+      "cost_per_1000_questions": 0.0,
+      "parse_error_rate": 0.0
+    }
+  ],
+  "selected_policy": {
+    "n": 500,
+    "accuracy": 0.976,
+    "macro_f1": 0.9776010467362903,
+    "classwise_f1": {
+      "A": 0.9703504043126684,
+      "B": 0.9731800766283525,
+      "C": 0.9813664596273292,
+      "D": 0.9855072463768115
+    },
+    "ece": 0.3013859678844903,
+    "brier_score": 0.11688909382196863,
+    "bootstrap_accuracy_95ci": [
+      0.964,
+      0.988
+    ],
+    "task_counts": {
+      "Raw Meaning Selection": 388,
+      "Synonym Selection": 40,
+      "Sense Disambiguation": 22,
+      "Antonym Selection": 14,
+      "Context Cloze": 36
+    },
+    "task_accuracy": {
+      "Raw Meaning Selection": 1.0,
+      "Synonym Selection": 0.975,
+      "Sense Disambiguation": 1.0,
+      "Antonym Selection": 0.21428571428571427,
+      "Context Cloze": 1.0
+    },
+    "parse_error_rate": 0.0,
+    "strict_parse_error_rate": 0.0,
+    "tokens_per_sec": 87.13149486229426,
+    "cost_per_1000_questions": 0.0,
+    "peak_VRAM_or_RAM": 2207.06689453125,
+    "peak_ram_mb": 2217.4140625,
+    "cold_start_ms": 0.0,
+    "ops_metric_coverage": {
+      "latency_ms": 500,
+      "batch_size_1_latency_ms": 500,
+      "tokens_per_sec": 10,
+      "peak_vram_mb": 500,
+      "ram_mb": 500,
+      "estimated_cost_usd": 0,
+      "local_cost_per_hour_usd": 10,
+      "cold_start_ms": 10
+    },
+    "total_estimated_cost_usd": 0.0,
+    "latency_p50": 22.946856915950775,
+    "latency_p95": 26.77719492930919,
+    "batch_size_1_latency_p95": 26.77719492930919,
+    "primary_accept_rate": 0.036,
+    "cross_encoder_rate": 0.944,
+    "fallback_rate": 0.02,
+    "low_confidence_threshold": 0.75,
+    "high_confidence_threshold": 0.85
+  }
+}

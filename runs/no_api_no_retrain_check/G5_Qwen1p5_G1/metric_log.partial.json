@@ -1,0 +1,62 @@
+{
+  "n": 500,
+  "accuracy": 0.976,
+  "macro_f1": 0.978317400799703,
+  "classwise_f1": {
+    "A": 0.9705093833780162,
+    "B": 0.9729729729729729,
+    "C": 0.9937106918238994,
+    "D": 0.9760765550239235
+  },
+  "ece": 0.02400000000000002,
+  "brier_score": 0.024,
+  "bootstrap_accuracy_95ci": [
+    0.962,
+    0.988
+  ],
+  "task_counts": {
+    "Raw Meaning Selection": 388,
+    "Synonym Selection": 40,
+    "Sense Disambiguation": 22,
+    "Antonym Selection": 14,
+    "Context Cloze": 36
+  },
+  "task_accuracy": {
+    "Raw Meaning Selection": 1.0,
+    "Synonym Selection": 1.0,
+    "Sense Disambiguation": 0.9545454545454546,
+    "Antonym Selection": 0.21428571428571427,
+    "Context Cloze": 1.0
+  },
+  "parse_error_rate": 0.0,
+  "strict_parse_error_rate": 0.08,
+  "tokens_per_sec": 43.916436551230724,
+  "cost_per_1000_questions": 0.0,
+  "peak_VRAM_or_RAM": 3000.64208984375,
+  "peak_ram_mb": 2349.64453125,
+  "cold_start_ms": 3550.47061201185,
+  "ops_metric_coverage": {
+    "latency_ms": 500,
+    "batch_size_1_latency_ms": 500,
+    "tokens_per_sec": 500,
+    "peak_vram_mb": 500,
+    "ram_mb": 500,
+    "estimated_cost_usd": 0,
+    "local_cost_per_hour_usd": 500,
+    "cold_start_ms": 500
+  },
+  "total_estimated_cost_usd": 0.0,
+  "latency_p50": 341.01873997133225,
+  "latency_p95": 1411.8009359808639,
+  "batch_size_1_latency_p95": 1411.8009359808639,
+  "adapter_path": "runs/G5_Qwen1p5_G1_dev/final_adapter",
+  "quantization": "fp16",
+  "model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct",
+  "local_cost_per_hour_usd": 0.0,
+  "parser_version": "mcq_answer_parser_v2",
+  "prompt_contract_version": "mcq_answer_json_v2",
+  "prompt_mode": "chat",
+  "trust_remote_code": false,
+  "prompt_mode_effective": "chat",
+  "partial": false
+}

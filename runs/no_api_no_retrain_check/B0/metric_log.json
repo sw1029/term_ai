@@ -1,0 +1,57 @@
+{
+  "n": 500,
+  "accuracy": 0.63,
+  "macro_f1": 0.6117619410802235,
+  "classwise_f1": {
+    "A": 0.7036011080332409,
+    "B": 0.6425702811244979,
+    "C": 0.5202312138728324,
+    "D": 0.5806451612903226
+  },
+  "ece": 0.17386816406249994,
+  "brier_score": 0.25447009176015856,
+  "bootstrap_accuracy_95ci": [
+    0.584,
+    0.676
+  ],
+  "task_counts": {
+    "Raw Meaning Selection": 388,
+    "Synonym Selection": 40,
+    "Sense Disambiguation": 22,
+    "Antonym Selection": 14,
+    "Context Cloze": 36
+  },
+  "task_accuracy": {
+    "Raw Meaning Selection": 0.6108247422680413,
+    "Synonym Selection": 0.775,
+    "Sense Disambiguation": 0.8181818181818182,
+    "Antonym Selection": 0.2857142857142857,
+    "Context Cloze": 0.6944444444444444
+  },
+  "parse_error_rate": 0.0,
+  "strict_parse_error_rate": 0.0,
+  "tokens_per_sec": 0.0,
+  "cost_per_1000_questions": 0.0,
+  "peak_VRAM_or_RAM": 675.66015625,
+  "peak_ram_mb": 1846.41796875,
+  "cold_start_ms": 0.0,
+  "ops_metric_coverage": {
+    "latency_ms": 500,
+    "batch_size_1_latency_ms": 500,
+    "tokens_per_sec": 0,
+    "peak_vram_mb": 500,
+    "ram_mb": 500,
+    "estimated_cost_usd": 0,
+    "local_cost_per_hour_usd": 0,
+    "cold_start_ms": 0
+  },
+  "latency_p50": 19.9785620206967,
+  "latency_p95": 22.553741931915283,
+  "batch_size_1_latency_p95": 22.553741931915283,
+  "threshold": -1.0,
+  "threshold_tuning": {
+    "threshold": -1.0,
+    "accuracy": 0.6006415396952687,
+    "coverage": 1.0
+  }
+}

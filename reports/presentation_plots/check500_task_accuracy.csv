@@ -1,0 +1,41 @@
+model,label,task,accuracy
+B0,B0 embedding,Raw Meaning Selection,0.6108247422680413
+B0,B0 embedding,Synonym Selection,0.775
+B0,B0 embedding,Sense Disambiguation,0.8181818181818182
+B0,B0 embedding,Antonym Selection,0.2857142857142857
+B0,B0 embedding,Context Cloze,0.6944444444444444
+B2,B2 MLP scorer,Raw Meaning Selection,0.6030927835051546
+B2,B2 MLP scorer,Synonym Selection,0.5
+B2,B2 MLP scorer,Sense Disambiguation,0.6363636363636364
+B2,B2 MLP scorer,Antonym Selection,0.2857142857142857
+B2,B2 MLP scorer,Context Cloze,0.5277777777777778
+B3,B3 cross-encoder,Raw Meaning Selection,1.0
+B3,B3 cross-encoder,Synonym Selection,0.975
+B3,B3 cross-encoder,Sense Disambiguation,1.0
+B3,B3 cross-encoder,Antonym Selection,0.14285714285714285
+B3,B3 cross-encoder,Context Cloze,1.0
+H1_local_hybrid,H1 local hybrid,Raw Meaning Selection,1.0
+H1_local_hybrid,H1 local hybrid,Synonym Selection,0.975
+H1_local_hybrid,H1 local hybrid,Sense Disambiguation,1.0
+H1_local_hybrid,H1 local hybrid,Antonym Selection,0.21428571428571427
+H1_local_hybrid,H1 local hybrid,Context Cloze,1.0
+G5_Qwen0p5_G1,G5 0.5B SFT,Raw Meaning Selection,0.9974226804123711
+G5_Qwen0p5_G1,G5 0.5B SFT,Synonym Selection,0.975
+G5_Qwen0p5_G1,G5 0.5B SFT,Sense Disambiguation,0.9090909090909091
+G5_Qwen0p5_G1,G5 0.5B SFT,Antonym Selection,0.07142857142857142
+G5_Qwen0p5_G1,G5 0.5B SFT,Context Cloze,1.0
+G5_Qwen1p5_G1,G5 1.5B SFT,Raw Meaning Selection,1.0
+G5_Qwen1p5_G1,G5 1.5B SFT,Synonym Selection,1.0
+G5_Qwen1p5_G1,G5 1.5B SFT,Sense Disambiguation,0.9545454545454546
+G5_Qwen1p5_G1,G5 1.5B SFT,Antonym Selection,0.21428571428571427
+G5_Qwen1p5_G1,G5 1.5B SFT,Context Cloze,1.0
+G4_Qwen_4bit,G4 3B 4-bit,Raw Meaning Selection,1.0
+G4_Qwen_4bit,G4 3B 4-bit,Synonym Selection,1.0
+G4_Qwen_4bit,G4 3B 4-bit,Sense Disambiguation,1.0
+G4_Qwen_4bit,G4 3B 4-bit,Antonym Selection,0.14285714285714285
+G4_Qwen_4bit,G4 3B 4-bit,Context Cloze,0.9722222222222222
+G3_Qwen,G3 3B KD/SFT,Raw Meaning Selection,0.9974226804123711
+G3_Qwen,G3 3B KD/SFT,Synonym Selection,1.0
+G3_Qwen,G3 3B KD/SFT,Sense Disambiguation,1.0
+G3_Qwen,G3 3B KD/SFT,Antonym Selection,0.7857142857142857
+G3_Qwen,G3 3B KD/SFT,Context Cloze,1.0

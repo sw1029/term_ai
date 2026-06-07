@@ -1,0 +1,17 @@
+{
+  "n_common": 500,
+  "mcnemar": {
+    "b": 14,
+    "c": 1,
+    "statistic": 9.6,
+    "p_value": 0.0019457736937391532
+  },
+  "paired_bootstrap_accuracy_delta": {
+    "delta": 0.026000000000000023,
+    "ci": [
+      0.01200000000000001,
+      0.04200000000000004
+    ],
+    "p_value_two_sided": 0.0
+  }
+}
